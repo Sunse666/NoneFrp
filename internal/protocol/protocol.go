@@ -22,6 +22,7 @@ const (
 	TypeRegister   Type = "register"
 	TypeRegistered Type = "registered"
 	TypePeerJoined Type = "peer_joined"
+	TypePeerLeft   Type = "peer_left"
 	TypeUnregister Type = "unregister"
 	TypeError      Type = "error"
 )
@@ -106,6 +107,12 @@ type Registered struct {
 // PeerJoined notifies the agent that a player is connecting. It is advisory and
 // only used for display.
 type PeerJoined struct {
+	PlayerIP string `json:"player_ip"`
+	At       string `json:"at"`
+}
+
+// PeerLeft notifies the agent that a player connection finished.
+type PeerLeft struct {
 	PlayerIP string `json:"player_ip"`
 	At       string `json:"at"`
 }

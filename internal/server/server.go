@@ -234,6 +234,9 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	log = log.With("room", created.Code, "device", reg.DeviceID)
 	log.Info("room registered", "public", publicHost, "port", created.PublicPort)
 
+	s.plane.setControl(created.Code, peer)
+	defer s.plane.dropControl(created.Code, peer)
+
 	defer func() {
 		s.rooms.MarkGrace(created.Code)
 		log.Info("agent disconnected", "grace_period", s.cfg.GracePeriod.Std().String())

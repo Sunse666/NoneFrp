@@ -36,13 +36,44 @@ type dataplane struct {
 	mu      sync.Mutex
 	dials   map[string]channel.Dialer
 	streams map[string]int
+	control map[string]*peer
 }
 
 func newDataplane() *dataplane {
 	return &dataplane{
 		dials:   make(map[string]channel.Dialer),
 		streams: make(map[string]int),
+		control: make(map[string]*peer),
 	}
+}
+
+// setControl records the control connection of a room so player events can be
+// pushed to the agent.
+func (p *dataplane) setControl(code string, writer *peer) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.control[code] = writer
+}
+
+// dropControl forgets the control connection of a room.
+func (p *dataplane) dropControl(code string, writer *peer) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if current, ok := p.control[code]; ok && current == writer {
+		delete(p.control, code)
+	}
+}
+
+// notify sends an advisory message to a room's agent. Failure is ignored: these
+// messages only drive the status display.
+func (p *dataplane) notify(code string, messageType protocol.Type, payload any) {
+	p.mu.Lock()
+	target, ok := p.control[code]
+	p.mu.Unlock()
+	if !ok {
+		return
+	}
+	_ = target.send(messageType, payload)
 }
 
 // setDialer installs the data session of a room, replacing and closing any
@@ -295,6 +326,15 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		return
 	}
 	defer s.plane.release(roomCode)
+
+	s.plane.notify(roomCode, protocol.TypePeerJoined, protocol.PeerJoined{
+		PlayerIP: clientIP,
+		At:       time.Now().UTC().Format(time.RFC3339),
+	})
+	defer s.plane.notify(roomCode, protocol.TypePeerLeft, protocol.PeerLeft{
+		PlayerIP: clientIP,
+		At:       time.Now().UTC().Format(time.RFC3339),
+	})
 
 	meta := protocol.StreamMeta{
 		Host:      handshake.ServerAddress,

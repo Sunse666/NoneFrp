@@ -79,6 +79,14 @@ func buildHandshake(version int, address string, port uint16, nextState int) []b
 // registerRoom opens a control connection and returns the assigned room code.
 func registerRoom(t *testing.T, ts *httptest.Server, deviceID string) string {
 	t.Helper()
+	_, code := registerRoomConn(t, ts, deviceID)
+	return code
+}
+
+// registerRoomConn keeps the control connection open so tests can read the
+// advisory messages pushed to the agent.
+func registerRoomConn(t *testing.T, ts *httptest.Server, deviceID string) (*websocket.Conn, string) {
+	t.Helper()
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/v1/agent"
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+testToken)
@@ -107,7 +115,7 @@ func registerRoom(t *testing.T, ts *httptest.Server, deviceID string) string {
 	if err != nil {
 		t.Fatalf("as: %v", err)
 	}
-	return registered.RoomCode
+	return conn, registered.RoomCode
 }
 
 func openDataSession(t *testing.T, ts *httptest.Server, roomCode, deviceID string) *channel.YamuxAcceptor {
@@ -226,6 +234,70 @@ func TestPlayerIsRoutedToTheAgent(t *testing.T) {
 	}
 	if !bytes.Equal(got, reply) {
 		t.Fatalf("player got %q", got)
+	}
+}
+
+func TestAgentIsNotifiedAboutPlayers(t *testing.T) {
+	srv, ts := newDataTestServer(t)
+
+	control, roomCode := registerRoomConn(t, ts, "dev-1")
+	acceptor := openDataSession(t, ts, roomCode, "dev-1")
+	waitForDialer(t, srv, roomCode)
+
+	// Drain the yamux stream so the player connection stays open.
+	go func() {
+		stream, _, err := acceptor.Accept()
+		if err != nil {
+			return
+		}
+		buf := make([]byte, 256)
+		_, _ = stream.Read(buf)
+		time.Sleep(200 * time.Millisecond)
+		_ = stream.Close()
+	}()
+
+	player, err := net.Dial("tcp", srv.PlayerAddr().String())
+	if err != nil {
+		t.Fatalf("dial player: %v", err)
+	}
+
+	handshake := buildHandshake(767, roomCode+".mc.example.com", 25565, mcproto.NextStateStatus)
+	if _, err := player.Write(handshake); err != nil {
+		t.Fatalf("write handshake: %v", err)
+	}
+
+	_ = control.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, raw, err := control.ReadMessage()
+	if err != nil {
+		t.Fatalf("read control message: %v", err)
+	}
+	env, err := protocol.Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Type != protocol.TypePeerJoined {
+		t.Fatalf("type = %q, want peer_joined", env.Type)
+	}
+	joined, err := protocol.As[protocol.PeerJoined](env)
+	if err != nil {
+		t.Fatalf("as: %v", err)
+	}
+	if joined.PlayerIP == "" {
+		t.Fatal("player address missing")
+	}
+
+	_ = player.Close()
+	_ = control.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, raw, err = control.ReadMessage()
+	if err != nil {
+		t.Fatalf("read peer_left: %v", err)
+	}
+	env, err = protocol.Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Type != protocol.TypePeerLeft {
+		t.Fatalf("type = %q, want peer_left", env.Type)
 	}
 }
 
