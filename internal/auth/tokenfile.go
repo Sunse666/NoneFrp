@@ -1,32 +1,25 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"strings"
-)
 
-const tokensKey = "tokens:"
+	"gopkg.in/yaml.v3"
+)
 
 // ErrMissingConfig is returned when the server configuration does not exist yet.
 var ErrMissingConfig = errors.New("server configuration not found")
 
 // AppendTokenFile adds token to the token table of a server configuration file.
 //
-// The file is edited textually so that comments and formatting survive. An
-// existing "tokens:" block is extended; otherwise a new block is appended.
+// The file is edited as a YAML document rather than as text, so both "tokens:"
+// and "tokens: {}" are handled and comments survive.
 func AppendTokenFile(path, token, note string) error {
 	if !ValidToken(token) {
 		return fmt.Errorf("invalid token %q", token)
 	}
-	quoted, err := json.Marshal(note)
-	if err != nil {
-		return fmt.Errorf("quote note: %w", err)
-	}
-	entry := "  " + token + ": " + string(quoted)
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -36,27 +29,58 @@ func AppendTokenFile(path, token, note string) error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 
-	var lines []string
-	if len(strings.TrimSpace(string(raw))) > 0 {
-		lines = strings.Split(strings.TrimRight(string(raw), "\r\n"), "\n")
+	var document yaml.Node
+	if err := yaml.Unmarshal(raw, &document); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
 	}
 
-	out := make([]string, 0, len(lines)+2)
-	inserted := false
-	for _, line := range lines {
-		out = append(out, line)
-		if !inserted && strings.HasPrefix(line, tokensKey) {
-			out = append(out, entry)
-			inserted = true
+	root := &document
+	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = root.Content[0]
+	}
+	if root.Kind != yaml.MappingNode {
+		return fmt.Errorf("%s does not contain a mapping at the top level", path)
+	}
+
+	tokens := findMappingValue(root, "tokens")
+	if tokens == nil {
+		tokens = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		root.Content = append(root.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "tokens"},
+			tokens,
+		)
+	}
+	if tokens.Kind != yaml.MappingNode {
+		return fmt.Errorf("tokens in %s is not a mapping", path)
+	}
+
+	for i := 0; i+1 < len(tokens.Content); i += 2 {
+		if tokens.Content[i].Value == token {
+			return fmt.Errorf("token %s is already present in %s", token, path)
 		}
 	}
-	if !inserted {
-		out = append(out, tokensKey, entry)
-	}
 
-	content := strings.Join(out, "\n") + "\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	tokens.Content = append(tokens.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: token},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: note},
+	)
+
+	encoded, err := yaml.Marshal(&document)
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// findMappingValue returns the value node for key in a mapping node.
+func findMappingValue(mapping *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			return mapping.Content[i+1]
+		}
 	}
 	return nil
 }
