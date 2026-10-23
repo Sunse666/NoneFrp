@@ -20,6 +20,7 @@ import (
 	"github.com/Sunse666/NoneFrp/internal/link"
 	"github.com/Sunse666/NoneFrp/internal/protocol"
 	"github.com/Sunse666/NoneFrp/internal/server"
+	"github.com/Sunse666/NoneFrp/internal/ui"
 )
 
 // Build metadata, overridable at link time via -ldflags.
@@ -219,6 +220,24 @@ func runClient(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if cfg.UI.Enabled {
+		webUI, err := ui.New(agent, "", newLogger())
+		if err != nil {
+			return err
+		}
+		base, err := webUI.Start(ctx, "127.0.0.1:0")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("web ui: %s\n", base)
+		if cfg.UI.OpenBrowser {
+			if err := ui.OpenBrowser(base); err != nil {
+				newLogger().Warn("could not open a browser", "error", err)
+			}
+		}
+	}
+
 	return agent.Run(ctx)
 }
 
