@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/Sunse666/NoneFrp/internal/auth"
@@ -76,6 +77,7 @@ func runServer(args []string) error {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	configPath := fs.String("config", "server.yaml", "path to the server configuration file")
 	debug := fs.Bool("debug", false, "log every player connection and rejection")
+	check := fs.Bool("check", false, "validate the configuration and exit")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
 	}
@@ -83,6 +85,16 @@ func runServer(args []string) error {
 	cfg, err := config.LoadServer(*configPath)
 	if err != nil {
 		return err
+	}
+
+	if *check {
+		fmt.Printf("config ok: %s\n", *configPath)
+		fmt.Printf("  listen:        %s\n", cfg.Listen)
+		fmt.Printf("  public_port:   %d\n", cfg.PublicPort)
+		fmt.Printf("  domain_suffix: %s\n", cfg.DomainSuffix)
+		fmt.Printf("  public_url:    %s\n", cfg.PublicURL)
+		fmt.Printf("  tokens:        %d\n", len(cfg.Tokens))
+		return nil
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -190,13 +202,19 @@ func runClient(args []string) error {
 	token := fs.String("token", "", "override the access token for this run")
 	debug := fs.Bool("debug", false, "log every forwarded stream")
 	join := fs.String("join", "", "import a nonerp://join link and save it")
+	check := fs.Bool("check", false, "validate the configuration and exit")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
 	}
 
 	cfg, err := config.LoadClient(*configPath)
 	if err != nil {
-		return err
+		// A join link is complete, so a missing file is not an error: the first
+		// run creates the configuration from the link.
+		if *join == "" || !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		cfg = config.DefaultClient()
 	}
 	if *relay != "" {
 		cfg.Relay = []config.Relay{{Name: "flag", URL: *relay}}
@@ -227,6 +245,17 @@ func runClient(args []string) error {
 		return err
 	}
 
+	if *check {
+		fmt.Printf("config ok: %s\n", *configPath)
+		for i, relay := range cfg.Relay {
+			fmt.Printf("  relay[%d]:      %s\n", i, relay.URL)
+		}
+		fmt.Printf("  local_port:    %d\n", cfg.Local.Port)
+		fmt.Printf("  room_code:     %s\n", cfg.Room.Code)
+		fmt.Printf("  token:         %s\n", mask(cfg.Token))
+		return nil
+	}
+
 	runner := supervisor.New(*configPath, filepath.Dir(*configPath), cfg, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -254,6 +283,14 @@ func runClient(args []string) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+// mask hides most of a token so it is safe to print.
+func mask(token string) string {
+	if len(token) <= 8 {
+		return strings.Repeat("*", len(token))
+	}
+	return token[:8] + strings.Repeat("*", len(token)-8)
 }
 
 func newLogger(debug bool) *slog.Logger {
