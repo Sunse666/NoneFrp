@@ -1,0 +1,26 @@
+# design notes (kept local unless decided otherwise)
+docs/
+
+# --- Go ---
+/bin/
+/dist/
+vendor/
+*.exe
+*.exe~
+*.test
+*.out
+coverage.*
+
+# --- runtime artifacts ---
+*.log
+logs/
+
+# --- local config: may contain tokens, never commit ---
+server.yaml
+client.yaml
+
+# --- editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
