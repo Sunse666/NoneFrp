@@ -189,6 +189,7 @@ func runClient(args []string) error {
 	relay := fs.String("relay", "", "override the relay url for this run")
 	token := fs.String("token", "", "override the access token for this run")
 	debug := fs.Bool("debug", false, "log every forwarded stream")
+	join := fs.String("join", "", "import a nonerp://join link and save it")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
 	}
@@ -203,11 +204,29 @@ func runClient(args []string) error {
 	if *token != "" {
 		cfg.Token = *token
 	}
+
+	logger := newLogger(*debug)
+
+	if *join != "" {
+		request, err := link.ParseJoin(*join)
+		if err != nil {
+			return err
+		}
+		cfg.Relay = []config.Relay{{Name: "join-link", URL: request.RelayURL}}
+		cfg.Token = request.Token
+		if request.Room != "" {
+			cfg.Room.Code = request.Room
+		}
+		if err := config.SaveClient(*configPath, cfg); err != nil {
+			return err
+		}
+		logger.Info("settings imported from a join link", "relay", request.RelayURL, "config", *configPath)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
 
-	logger := newLogger(*debug)
 	runner := supervisor.New(*configPath, filepath.Dir(*configPath), cfg, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
