@@ -90,8 +90,8 @@ func SpliceWith(a, b net.Conn, opts Options) Result {
 		if err != nil || opts.CloseOnClientEOF {
 			// A broken connection or a vanished player: nothing useful can follow.
 			upstreamClosed.Store(true)
-			_ = a.Close()
-			_ = b.Close()
+			hardClose(a)
+			hardClose(b)
 		}
 		results <- outcome{up: true, n: n, err: err}
 	}()
@@ -103,8 +103,8 @@ func SpliceWith(a, b net.Conn, opts Options) Result {
 			// The server is done sending, which for Minecraft means the session
 			// is over. Stop waiting for the client and tear the pair down.
 			upstreamClosed.Store(true)
-			_ = a.Close()
-			_ = b.Close()
+			hardClose(a)
+			hardClose(b)
 		}
 		results <- outcome{up: false, n: n, err: err}
 	}()
@@ -124,8 +124,8 @@ func SpliceWith(a, b net.Conn, opts Options) Result {
 		}
 	}
 
-	_ = a.Close()
-	_ = b.Close()
+	hardClose(a)
+	hardClose(b)
 	return res
 }
 
@@ -156,6 +156,18 @@ func copyDirection(dst, src net.Conn, idle time.Duration) (int64, error) {
 			return total, readErr
 		}
 	}
+}
+
+// hardClose tears a connection down and, crucially, wakes any goroutine that is
+// blocked reading from it. A plain Close is not enough for multiplexed streams:
+// a concurrent Read may keep waiting for data that will never arrive, which
+// leaves the whole splice, and the player slot behind it, stuck.
+func hardClose(conn net.Conn) {
+	_ = conn.SetReadDeadline(time.Now())
+	if resetter, ok := conn.(interface{ Reset() error }); ok {
+		_ = resetter.Reset()
+	}
+	_ = conn.Close()
 }
 
 // halfClose forwards a FIN where the transport supports it. Streams without

@@ -23,11 +23,19 @@ import (
 
 func newDataTestServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
+	return newDataTestServerWith(t, nil)
+}
+
+func newDataTestServerWith(t *testing.T, mutate func(*config.Server)) (*Server, *httptest.Server) {
+	t.Helper()
 	cfg := config.DefaultServer()
 	cfg.DomainSuffix = "mc.example.com"
 	cfg.PublicPort = 0
 	cfg.GracePeriod = config.Duration(30 * time.Second)
 	cfg.Tokens = map[string]string{testToken: "test host"}
+	if mutate != nil {
+		mutate(&cfg)
+	}
 
 	srv := New(cfg, slog.New(slog.DiscardHandler))
 	if err := srv.listenPublic(); err != nil {
@@ -348,6 +356,105 @@ func TestAgentIsNotifiedAboutPlayers(t *testing.T) {
 	}
 	if env.Type != protocol.TypePeerLeft {
 		t.Fatalf("type = %q, want peer_left", env.Type)
+	}
+}
+
+// A full room must turn players away before a stream is even opened, with a
+// message they can read instead of a silent drop.
+func TestFullRoomIsRejected(t *testing.T) {
+	srv, ts := newDataTestServerWith(t, func(cfg *config.Server) {
+		cfg.Limits.MaxPlayersPerRoom = 1
+	})
+
+	_, roomCode := registerRoomConn(t, ts, "dev-1")
+	acceptor := openDataSession(t, ts, roomCode, "dev-1")
+	waitForDialer(t, srv, roomCode)
+
+	// Stand in for the local server: hold every stream open until the test ends.
+	accepted := make(chan struct{}, 4)
+	release := make(chan struct{})
+	defer close(release)
+	go func() {
+		for {
+			stream, _, err := acceptor.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- struct{}{}
+			go func(conn net.Conn) {
+				<-release
+				_ = conn.Close()
+			}(stream)
+		}
+	}()
+
+	first, err := net.Dial("tcp", srv.PlayerAddr().String())
+	if err != nil {
+		t.Fatalf("dial first player: %v", err)
+	}
+	defer func() { _ = first.Close() }()
+	if _, err := first.Write(buildHandshake(767, roomCode+".mc.example.com", 25565, mcproto.NextStateLogin)); err != nil {
+		t.Fatalf("write first handshake: %v", err)
+	}
+
+	select {
+	case <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first player was never forwarded")
+	}
+
+	second, err := net.Dial("tcp", srv.PlayerAddr().String())
+	if err != nil {
+		t.Fatalf("dial second player: %v", err)
+	}
+	defer func() { _ = second.Close() }()
+	_ = second.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := second.Write(buildHandshake(767, roomCode+".mc.example.com", 25565, mcproto.NextStateLogin)); err != nil {
+		t.Fatalf("write second handshake: %v", err)
+	}
+
+	packetID, payload, err := mcproto.ReadPacket(second, 32767)
+	if err != nil {
+		t.Fatalf("read rejection: %v", err)
+	}
+	if packetID != 0x00 {
+		t.Fatalf("packet id = %d, want a disconnect", packetID)
+	}
+
+	var doc struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatalf("disconnect json: %v", err)
+	}
+	if doc.Text != messageRoomFull {
+		t.Fatalf("message = %q, want %q", doc.Text, messageRoomFull)
+	}
+
+	// A freed slot must let the next player through. The relay needs a moment to
+	// notice the departure, so retry like a real client would.
+	_ = first.Close()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		conn, err := net.Dial("tcp", srv.PlayerAddr().String())
+		if err != nil {
+			t.Fatalf("dial after the slot was freed: %v", err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if _, err := conn.Write(buildHandshake(767, roomCode+".mc.example.com", 25565, mcproto.NextStateLogin)); err != nil {
+			t.Fatalf("write handshake: %v", err)
+		}
+
+		select {
+		case <-accepted:
+			_ = conn.Close()
+			return
+		case <-time.After(200 * time.Millisecond):
+			_ = conn.Close()
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the freed slot was never reused")
+		}
 	}
 }
 
