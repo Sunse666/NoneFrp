@@ -44,8 +44,9 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		printUsage()
-		return errUsage
+		// Double clicking the binary passes no arguments: that means "run the
+		// agent". Everything else is one word away.
+		return runClient(nil)
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
@@ -197,7 +198,7 @@ func runServerLink(args []string) error {
 
 func runClient(args []string) error {
 	fs := flag.NewFlagSet("client", flag.ContinueOnError)
-	configPath := fs.String("config", "client.yaml", "path to the client configuration file")
+	configPath := fs.String("config", defaultClientConfigPath(), "path to the client configuration file")
 	relay := fs.String("relay", "", "override the relay url for this run")
 	token := fs.String("token", "", "override the access token for this run")
 	debug := fs.Bool("debug", false, "log every forwarded stream")
@@ -208,13 +209,17 @@ func runClient(args []string) error {
 	}
 
 	cfg, err := config.LoadClient(*configPath)
+	firstRun := false
 	if err != nil {
-		// A join link is complete, so a missing file is not an error: the first
-		// run creates the configuration from the link.
-		if *join == "" || !errors.Is(err, os.ErrNotExist) {
+		// -check is used by scripts: a missing file there is still an error.
+		if !errors.Is(err, os.ErrNotExist) || *check {
 			return err
 		}
+		// No configuration yet: start empty and let the web interface collect
+		// the relay and the token. Double clicking the binary is a valid way to
+		// get started now.
 		cfg = config.DefaultClient()
+		firstRun = *join == ""
 	}
 	if *relay != "" {
 		cfg.Relay = []config.Relay{{Name: "flag", URL: *relay}}
@@ -241,7 +246,8 @@ func runClient(args []string) error {
 		logger.Info("settings imported from a join link", "relay", request.RelayURL, "config", *configPath)
 	}
 
-	if err := cfg.Validate(); err != nil {
+	// A first run has nothing to validate yet; the web interface collects it.
+	if err := cfg.Validate(); err != nil && !firstRun {
 		return err
 	}
 
@@ -274,6 +280,10 @@ func runClient(args []string) error {
 			return err
 		}
 		fmt.Printf("web ui: %s\n", base)
+		if firstRun {
+			fmt.Printf("no configuration yet: use the web interface to paste a join link\n")
+			fmt.Printf("or to enter a relay address and a token. it will be saved to %s\n", *configPath)
+		}
 		if cfg.UI.OpenBrowser {
 			if err := ui.OpenBrowser(base); err != nil {
 				logger.Warn("could not open a browser", "error", err)
@@ -283,6 +293,17 @@ func runClient(args []string) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+// defaultClientConfigPath returns client.yaml next to the binary, so double
+// clicking the executable finds its configuration regardless of the working
+// directory a shortcut or a scheduled task hands it.
+func defaultClientConfigPath() string {
+	executable, err := os.Executable()
+	if err != nil {
+		return "client.yaml"
+	}
+	return filepath.Join(filepath.Dir(executable), "client.yaml")
 }
 
 // mask hides most of a token so it is safe to print.
@@ -305,6 +326,7 @@ func printUsage() {
 	fmt.Fprint(os.Stderr, `nonerp - reverse tunnel for Minecraft servers
 
 Usage:
+  nonerp                 run the host agent (same as "nonerp client")
   nonerp <command> [flags]
 
 Commands:

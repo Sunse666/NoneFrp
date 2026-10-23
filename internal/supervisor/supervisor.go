@@ -41,6 +41,13 @@ func (r *Runner) Start(ctx context.Context) {
 	defer r.mu.Unlock()
 
 	r.parent = ctx
+
+	// A first run has no relay or token yet: stay idle and let the web
+	// interface collect them instead of retrying a connection forever.
+	if err := r.cfg.Validate(); err != nil {
+		r.log.Warn("waiting for configuration", "reason", err)
+		return
+	}
 	if err := r.startLocked(r.cfg); err != nil {
 		r.log.Error("could not start the agent", "error", err)
 	}

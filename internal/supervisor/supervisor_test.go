@@ -65,6 +65,35 @@ func TestRunnerStartsTheAgent(t *testing.T) {
 	}
 }
 
+// A first run starts with an empty configuration: the agent must stay idle
+// instead of retrying a connection it cannot make, and start once the web
+// interface provides the details.
+func TestStartWaitsForConfiguration(t *testing.T) {
+	ts := startRelay(t)
+	path := filepath.Join(t.TempDir(), "client.yaml")
+
+	runner := New(path, t.TempDir(), config.DefaultClient(), slog.New(slog.DiscardHandler))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner.Start(ctx)
+	defer runner.Stop()
+
+	time.Sleep(150 * time.Millisecond)
+	if runner.Status().Connected {
+		t.Fatal("an unconfigured agent must not be connected")
+	}
+
+	configured := config.DefaultClient()
+	configured.Token = testToken
+	configured.Relay = []config.Relay{{Name: "test", URL: "ws" + strings.TrimPrefix(ts.URL, "http")}}
+
+	if err := runner.Apply(configured); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	waitConnected(t, runner, true, 5*time.Second)
+}
+
 func TestApplyRestartsWithNewSettings(t *testing.T) {
 	ts := startRelay(t)
 	path := filepath.Join(t.TempDir(), "client.yaml")

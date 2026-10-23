@@ -22,6 +22,7 @@ import (
 
 	"github.com/Sunse666/NoneFrp/internal/client"
 	"github.com/Sunse666/NoneFrp/internal/config"
+	"github.com/Sunse666/NoneFrp/internal/link"
 	"github.com/Sunse666/NoneFrp/internal/netinfo"
 )
 
@@ -136,6 +137,7 @@ func (s *Server) Start(ctx context.Context, addr string) (string, error) {
 type pageData struct {
 	Base          string
 	CSRF          string
+	Configured    bool
 	Relays        string
 	Token         string
 	LocalPort     int
@@ -160,6 +162,8 @@ func (s *Server) buildPage(r *http.Request) pageData {
 	}
 
 	cfg := s.settings.Config()
+	data.Configured = cfg.Validate() == nil
+
 	urls := make([]string, 0, len(cfg.Relay))
 	for _, relay := range cfg.Relay {
 		urls = append(urls, relay.URL)
@@ -250,6 +254,20 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		roomCode = "auto"
 	}
 	cfg.Room.Code = roomCode
+
+	// A pasted join link carries everything, so it wins over the fields above.
+	if raw := strings.TrimSpace(r.PostFormValue("join")); raw != "" {
+		request, err := link.ParseJoin(raw)
+		if err != nil {
+			s.redirect(w, r, err.Error(), true)
+			return
+		}
+		cfg.Relay = []config.Relay{{Name: "join-link", URL: request.RelayURL}}
+		cfg.Token = request.Token
+		if request.Room != "" {
+			cfg.Room.Code = request.Room
+		}
+	}
 
 	if err := s.settings.Apply(cfg); err != nil {
 		s.log.Warn("applying settings failed", "error", err)

@@ -123,9 +123,16 @@ const indexHTML = `<!doctype html>
   {{if .Editable}}
   <section class="card">
     <div class="label">设置</div>
+    {{if not .Configured}}
+    <div class="flash err">还没有连上中继。把管理员给你的 <b>nonerp://join?...</b> 链接粘贴到第一个框，直接用下面的「保存并重连」即可；也可以手动填写中继地址和令牌。</div>
+    {{end}}
     {{if .Message}}<div class="flash {{if .IsError}}err{{else}}ok{{end}}">{{.Message}}</div>{{end}}
     <form method="post" action="{{.Base}}/settings">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="field">
+        <span>邀请链接（可选，粘贴后自动填好下面各项）</span>
+        <input type="text" name="join" placeholder="nonerp://join?..." autocomplete="off" spellcheck="false">
+      </div>
       <div class="field">
         <span>中继地址（每行一个，按顺序尝试）</span>
         <textarea name="relays" spellcheck="false">{{.Relays}}</textarea>

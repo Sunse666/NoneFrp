@@ -154,6 +154,83 @@ func TestForeignHostIsForbidden(t *testing.T) {
 	}
 }
 
+// A brand new install has neither a relay nor a token: the page has to say so
+// and offer the join link field instead of an empty status.
+func TestUnconfiguredPagePromptsSetup(t *testing.T) {
+	settings := &fakeSettings{cfg: config.DefaultClient()}
+	ts, _ := newTestUI(t, client.Status{}, settings)
+
+	code, page := get(t, ts.URL+"/testtoken/")
+	if code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	for _, want := range []string{"还没有连上中继", "邀请链接", "保存并重连"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page does not contain %q", want)
+		}
+	}
+}
+
+func TestSaveJoinLinkOverridesFields(t *testing.T) {
+	settings := defaultSettings()
+	ts, _ := newTestUI(t, client.Status{}, settings)
+
+	form := url.Values{}
+	form.Set("csrf", "testtoken")
+	form.Set("join", "nonerp://join?relay=wss%3A%2F%2Frelay2.example.com&room=b7k2m9&token=NFRP-NEWTOKEN")
+	form.Set("relays", "")
+	form.Set("token", "")
+	form.Set("local_port", "25565")
+	form.Set("room_code", "auto")
+
+	resp, err := http.PostForm(ts.URL+"/testtoken/settings", form)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if settings.applied == nil {
+		t.Fatal("the settings were never applied")
+	}
+	got := *settings.applied
+	if len(got.Relay) != 1 || got.Relay[0].URL != "wss://relay2.example.com" {
+		t.Fatalf("relay = %+v", got.Relay)
+	}
+	if got.Token != "NFRP-NEWTOKEN" {
+		t.Fatalf("token = %q", got.Token)
+	}
+	if got.Room.Code != "b7k2m9" {
+		t.Fatalf("room = %q", got.Room.Code)
+	}
+}
+
+func TestSaveRejectsBadJoinLink(t *testing.T) {
+	settings := defaultSettings()
+	ts, _ := newTestUI(t, client.Status{}, settings)
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+
+	form := url.Values{}
+	form.Set("csrf", "testtoken")
+	form.Set("join", "https://not-a-join-link")
+	form.Set("relays", "wss://relay.example.com")
+	form.Set("local_port", "25565")
+
+	resp, err := client.PostForm(ts.URL+"/testtoken/settings", form)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if settings.applied != nil {
+		t.Fatal("a rejected link was still applied")
+	}
+}
+
 func TestSaveSettings(t *testing.T) {
 	settings := defaultSettings()
 	ts, _ := newTestUI(t, client.Status{}, settings)

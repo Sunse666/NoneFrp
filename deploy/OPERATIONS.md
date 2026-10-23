@@ -1,4 +1,4 @@
-﻿# 运维手册
+# 运维手册
 
 本文按「谁在操作」分成两部分。日常 95% 的操作都在 Windows 那台机器上，Linux 服务器装好之后基本不用碰。
 
@@ -122,6 +122,10 @@ curl -s https://relay.example.com/readyz
 # 二、Windows 房主端
 
 ## 首次配置
+
+最简单的路径：**双击 exe**。浏览器会自动打开，把管理员给的 `nonerp://join?...` 链接粘贴到「邀请链接」框，点「保存并重连」。配置写进 exe 同目录的 `client.yaml`，下次双击直接连。
+
+命令行方式（等价）：
 
 1. 拿到 exe：`dist\NoneFrp-windows-amd64.exe`
 2. 拿到中继管理员发的 `nonerp://join?...` 链接
