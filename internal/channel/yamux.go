@@ -89,6 +89,9 @@ func (d *YamuxDialer) Open(ctx context.Context, meta protocol.StreamMeta) (net.C
 // Ready reports that the session can carry streams.
 func (d *YamuxDialer) Ready() <-chan struct{} { return d.ready }
 
+// Done is closed when the session terminates.
+func (d *YamuxDialer) Done() <-chan struct{} { return d.session.CloseChan() }
+
 // Close shuts the session down, which also closes every open stream.
 func (d *YamuxDialer) Close() error { return d.session.Close() }
 
@@ -129,6 +132,9 @@ func (a *YamuxAcceptor) Accept() (net.Conn, protocol.StreamMeta, error) {
 
 // Ready reports that the session can carry streams.
 func (a *YamuxAcceptor) Ready() <-chan struct{} { return a.ready }
+
+// Done is closed when the session terminates.
+func (a *YamuxAcceptor) Done() <-chan struct{} { return a.session.CloseChan() }
 
 // Close shuts the session down, which also closes every open stream.
 func (a *YamuxAcceptor) Close() error { return a.session.Close() }

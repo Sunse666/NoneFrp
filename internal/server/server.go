@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -36,10 +37,12 @@ var ErrServerClosed = errors.New("relay server closed")
 
 // Server is the relay control-plane server.
 type Server struct {
-	cfg      config.Server
-	rooms    *room.Registry
-	log      *slog.Logger
-	upgrader websocket.Upgrader
+	cfg            config.Server
+	rooms          *room.Registry
+	plane          *dataplane
+	log            *slog.Logger
+	upgrader       websocket.Upgrader
+	publicListener net.Listener
 }
 
 // New returns a relay server for cfg.
@@ -50,6 +53,7 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 	return &Server{
 		cfg:   cfg,
 		rooms: room.NewRegistry(cfg.GracePeriod.Std()),
+		plane: newDataplane(),
 		log:   logger,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -65,6 +69,7 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/agent", s.handleAgent)
+	mux.HandleFunc("GET /v1/data", s.handleData)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -84,6 +89,12 @@ func (s *Server) Run(ctx context.Context) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	if err := s.listenPublic(); err != nil {
+		return err
+	}
+	go s.servePublic(ctx)
+	defer s.plane.closeAll()
+
 	serveErr := make(chan error, 1)
 	go func() {
 		err := srv.ListenAndServe()
@@ -98,7 +109,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	s.log.Info("relay listening",
 		"addr", s.cfg.Listen,
-		"public_port", s.cfg.PublicPort,
+		"player_addr", s.PlayerAddr().String(),
 		"domain_suffix", s.cfg.DomainSuffix,
 		"tokens", len(s.cfg.Tokens),
 	)
@@ -130,9 +141,20 @@ func (s *Server) reapLoop(ctx context.Context) {
 		case <-ticker.C:
 			if removed := s.rooms.Reap(); removed > 0 {
 				s.log.Info("reaped expired rooms", "count", removed, "remaining", s.rooms.Len())
+				s.plane.retainOnly(s.liveRooms())
 			}
 		}
 	}
+}
+
+// liveRooms returns the set of room codes that still exist.
+func (s *Server) liveRooms() map[string]bool {
+	snapshot := s.rooms.Snapshot()
+	alive := make(map[string]bool, len(snapshot))
+	for _, tracked := range snapshot {
+		alive[tracked.Code] = true
+	}
+	return alive
 }
 
 func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
