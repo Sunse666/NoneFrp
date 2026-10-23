@@ -1,0 +1,6 @@
+# Terminates TLS for the agent control plane and forwards it to the relay.
+# Replace relay.example.com with your own name; Caddy obtains and renews the
+# certificate automatically.
+relay.example.com {
+	reverse_proxy 127.0.0.1:8080
+}

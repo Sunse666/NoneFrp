@@ -25,3 +25,7 @@ client.yaml
 .idea/
 .DS_Store
 Thumbs.db
+
+device_id
+*.tmp
+

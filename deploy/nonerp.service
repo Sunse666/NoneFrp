@@ -1,0 +1,22 @@
+[Unit]
+Description=NoneFrp relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nonerp
+ExecStart=/opt/nonerp/nonerp server -config /opt/nonerp/server.yaml
+Restart=always
+RestartSec=2
+# Every player connection is one file descriptor on the relay.
+LimitNOFILE=100000
+NoNewPrivileges=true
+PrivateTmp=true
+# Graceful shutdown tells agents to move to another relay instead of waiting
+# for the heartbeat to time out.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

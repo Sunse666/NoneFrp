@@ -25,4 +25,15 @@ foreach ($t in $targets) {
     if ($LASTEXITCODE -ne 0) { throw "build failed for $($t.out)" }
 }
 
+# Assemble everything a Linux server needs into one uploadable folder.
+$bundle = "dist/nonerp-bundle"
+if (Test-Path $bundle) { Remove-Item -Recurse -Force $bundle }
+New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+
+Copy-Item "dist/nonerp-linux-amd64" $bundle
+foreach ($name in @("setup.sh", "install.sh", "preflight.sh", "nonerp.service", "nginx-relay.conf", "QUICKSTART.md", "OPERATIONS.md")) {
+    Copy-Item "deploy/$name" $bundle
+}
+
+Write-Host "bundle ready: $bundle"
 Write-Host "done"
