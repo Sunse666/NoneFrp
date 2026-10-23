@@ -147,6 +147,56 @@ func waitForDialer(t *testing.T, srv *Server, roomCode string) {
 	t.Fatal("the relay never registered a data session")
 }
 
+func TestDataplanePlayerLimit(t *testing.T) {
+	plane := newDataplane()
+	limits := config.Limits{MaxPlayersPerRoom: 2, MaxStreamsPerRoom: 10}
+
+	if !plane.acquire("a2b3c4", limits, true) {
+		t.Fatal("first player rejected")
+	}
+	if !plane.acquire("a2b3c4", limits, true) {
+		t.Fatal("second player rejected")
+	}
+	if plane.acquire("a2b3c4", limits, true) {
+		t.Fatal("third player should have been rejected")
+	}
+
+	// Server list pings do not take a player slot.
+	if !plane.acquire("a2b3c4", limits, false) {
+		t.Fatal("status ping rejected while the room was full")
+	}
+
+	plane.release("a2b3c4", true)
+	if !plane.acquire("a2b3c4", limits, true) {
+		t.Fatal("a freed player slot was not reusable")
+	}
+
+	// Other rooms are unaffected.
+	if !plane.acquire("b7k2m9", limits, true) {
+		t.Fatal("a different room was rejected")
+	}
+}
+
+func TestDataplaneStreamLimit(t *testing.T) {
+	plane := newDataplane()
+	limits := config.Limits{MaxPlayersPerRoom: 100, MaxStreamsPerRoom: 2}
+
+	if !plane.acquire("a2b3c4", limits, false) {
+		t.Fatal("first stream rejected")
+	}
+	if !plane.acquire("a2b3c4", limits, true) {
+		t.Fatal("second stream rejected")
+	}
+	if plane.acquire("a2b3c4", limits, false) {
+		t.Fatal("third stream should have been rejected")
+	}
+
+	plane.release("a2b3c4", true)
+	if !plane.acquire("a2b3c4", limits, false) {
+		t.Fatal("a freed stream slot was not reusable")
+	}
+}
+
 func TestRoomCodeFromHost(t *testing.T) {
 	cases := []struct {
 		host string

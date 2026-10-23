@@ -15,6 +15,7 @@ import (
 
 	"github.com/Sunse666/NoneFrp/internal/auth"
 	"github.com/Sunse666/NoneFrp/internal/channel"
+	"github.com/Sunse666/NoneFrp/internal/config"
 	"github.com/Sunse666/NoneFrp/internal/mcproto"
 	"github.com/Sunse666/NoneFrp/internal/protocol"
 	"github.com/Sunse666/NoneFrp/internal/proxy"
@@ -36,6 +37,7 @@ type dataplane struct {
 	mu      sync.Mutex
 	dials   map[string]channel.Dialer
 	streams map[string]int
+	players map[string]int
 	control map[string]*peer
 }
 
@@ -43,6 +45,7 @@ func newDataplane() *dataplane {
 	return &dataplane{
 		dials:   make(map[string]channel.Dialer),
 		streams: make(map[string]int),
+		players: make(map[string]int),
 		control: make(map[string]*peer),
 	}
 }
@@ -128,26 +131,41 @@ func (p *dataplane) waitDialer(code string, timeout time.Duration) (channel.Dial
 	}
 }
 
-// acquire reserves a stream slot, honouring the per room limit.
-func (p *dataplane) acquire(code string, limit int) bool {
+// acquire reserves a slot, honouring both the stream and the player limits.
+// Server list pings count against the stream limit only.
+func (p *dataplane) acquire(code string, limits config.Limits, player bool) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if limit > 0 && p.streams[code] >= limit {
+	if limits.MaxStreamsPerRoom > 0 && p.streams[code] >= limits.MaxStreamsPerRoom {
+		return false
+	}
+	if player && limits.MaxPlayersPerRoom > 0 && p.players[code] >= limits.MaxPlayersPerRoom {
 		return false
 	}
 	p.streams[code]++
+	if player {
+		p.players[code]++
+	}
 	return true
 }
 
-// release returns a stream slot.
-func (p *dataplane) release(code string) {
+// release returns a slot taken by acquire.
+func (p *dataplane) release(code string, player bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.streams[code] > 1 {
 		p.streams[code]--
+	} else {
+		delete(p.streams, code)
+	}
+	if !player {
 		return
 	}
-	delete(p.streams, code)
+	if p.players[code] > 1 {
+		p.players[code]--
+	} else {
+		delete(p.players, code)
+	}
 }
 
 // retainOnly closes data sessions of rooms that no longer exist.
@@ -320,12 +338,13 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		s.rejectPlayer(conn, handshake, messageHostOffline)
 		return
 	}
-	if !s.plane.acquire(roomCode, s.cfg.Limits.MaxStreamsPerRoom) {
-		log.Warn("rejecting player: room reached its stream limit", "room", roomCode)
+	isPlayer := handshake.NextState == mcproto.NextStateLogin
+	if !s.plane.acquire(roomCode, s.cfg.Limits, isPlayer) {
+		log.Warn("rejecting player: room is full", "room", roomCode, "login", isPlayer)
 		s.rejectPlayer(conn, handshake, messageRoomFull)
 		return
 	}
-	defer s.plane.release(roomCode)
+	defer s.plane.release(roomCode, isPlayer)
 
 	s.plane.notify(roomCode, protocol.TypePeerJoined, protocol.PeerJoined{
 		PlayerIP: clientIP,
