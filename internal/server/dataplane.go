@@ -25,6 +25,8 @@ const (
 	handshakeTimeout = 10 * time.Second
 	// openStreamTimeout bounds how long the relay waits for the agent to accept.
 	openStreamTimeout = 10 * time.Second
+	// dialerWait is how long a player waits for a room data session to appear.
+	dialerWait = 2 * time.Second
 )
 
 // dataplane tracks the live data sessions of all rooms.
@@ -69,6 +71,28 @@ func (p *dataplane) dialer(code string) (channel.Dialer, bool) {
 	defer p.mu.Unlock()
 	found, ok := p.dials[code]
 	return found, ok
+}
+
+// waitDialer returns the data session of a room, waiting briefly for one to
+// appear so that a player connecting in the instant after registration is not
+// dropped.
+func (p *dataplane) waitDialer(code string, timeout time.Duration) (channel.Dialer, bool) {
+	if found, ok := p.dialer(code); ok {
+		return found, true
+	}
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case <-deadline:
+			return nil, false
+		case <-ticker.C:
+			if found, ok := p.dialer(code); ok {
+				return found, true
+			}
+		}
+	}
 }
 
 // acquire reserves a stream slot, honouring the per room limit.
@@ -143,6 +167,17 @@ func (s *Server) PlayerAddr() net.Addr {
 		return nil
 	}
 	return s.publicListener.Addr()
+}
+
+// ServePublic binds the public port and serves player connections until ctx is
+// cancelled. Run calls it automatically; it is exported so tests and embedders
+// can run the data plane without the control listener.
+func (s *Server) ServePublic(ctx context.Context) error {
+	if err := s.listenPublic(); err != nil {
+		return err
+	}
+	s.servePublic(ctx)
+	return nil
 }
 
 func (s *Server) servePublic(ctx context.Context) {
@@ -238,7 +273,7 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
-	dialer, ok := s.plane.dialer(roomCode)
+	dialer, ok := s.plane.waitDialer(roomCode, dialerWait)
 	if !ok {
 		log.Debug("dropping player: room has no data session", "room", roomCode)
 		_ = conn.Close()

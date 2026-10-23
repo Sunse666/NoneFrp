@@ -164,6 +164,10 @@ func (c *Client) connect(ctx context.Context, relay config.Relay) (bool, error) 
 	}()
 	go pingLoop(conn, stop, c.log)
 
+	dataCtx, stopData := context.WithCancel(ctx)
+	defer stopData()
+	go c.runDataSession(dataCtx, relay, registered)
+
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
