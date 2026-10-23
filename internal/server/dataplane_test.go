@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -228,7 +229,7 @@ func TestPlayerIsRoutedToTheAgent(t *testing.T) {
 	}
 }
 
-func TestUnknownRoomIsDropped(t *testing.T) {
+func TestUnknownRoomGetsStatusReply(t *testing.T) {
 	srv, _ := newDataTestServer(t)
 
 	player, err := net.Dial("tcp", srv.PlayerAddr().String())
@@ -236,16 +237,87 @@ func TestUnknownRoomIsDropped(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = player.Close() }()
+	_ = player.SetDeadline(time.Now().Add(5 * time.Second))
 
 	handshake := buildHandshake(767, "zzzzzz.mc.example.com", 25565, mcproto.NextStateStatus)
 	if _, err := player.Write(handshake); err != nil {
-		t.Fatalf("write: %v", err)
+		t.Fatalf("write handshake: %v", err)
+	}
+	if err := mcproto.WritePacket(player, 0x00, nil); err != nil {
+		t.Fatalf("write status request: %v", err)
 	}
 
-	_ = player.SetReadDeadline(time.Now().Add(3 * time.Second))
-	buf := make([]byte, 1)
-	if _, err := player.Read(buf); err == nil {
-		t.Fatal("expected the connection to be closed")
+	packetID, payload, err := mcproto.ReadPacket(player, 32767)
+	if err != nil {
+		t.Fatalf("read status response: %v", err)
+	}
+	if packetID != 0x00 {
+		t.Fatalf("packet id = %d", packetID)
+	}
+
+	var doc struct {
+		Version struct {
+			Protocol int `json:"protocol"`
+		} `json:"version"`
+		Description struct {
+			Text string `json:"text"`
+		} `json:"description"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatalf("status json: %v", err)
+	}
+	if doc.Version.Protocol != 767 {
+		t.Fatalf("protocol = %d, want the client version echoed back", doc.Version.Protocol)
+	}
+	if doc.Description.Text != messageRoomNotFound {
+		t.Fatalf("description = %q", doc.Description.Text)
+	}
+
+	// The ping must still be answered so the entry renders instead of spinning.
+	ping := []byte{0, 0, 0, 0, 0, 0, 0, 42}
+	if err := mcproto.WritePacket(player, 0x01, ping); err != nil {
+		t.Fatalf("write ping: %v", err)
+	}
+	packetID, pong, err := mcproto.ReadPacket(player, 32767)
+	if err != nil {
+		t.Fatalf("read pong: %v", err)
+	}
+	if packetID != 0x01 || !bytes.Equal(pong, ping) {
+		t.Fatalf("pong = id %d payload %x", packetID, pong)
+	}
+}
+
+func TestUnknownRoomGetsLoginDisconnect(t *testing.T) {
+	srv, _ := newDataTestServer(t)
+
+	player, err := net.Dial("tcp", srv.PlayerAddr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = player.Close() }()
+	_ = player.SetDeadline(time.Now().Add(5 * time.Second))
+
+	handshake := buildHandshake(767, "zzzzzz.mc.example.com", 25565, mcproto.NextStateLogin)
+	if _, err := player.Write(handshake); err != nil {
+		t.Fatalf("write handshake: %v", err)
+	}
+
+	packetID, payload, err := mcproto.ReadPacket(player, 32767)
+	if err != nil {
+		t.Fatalf("read disconnect: %v", err)
+	}
+	if packetID != 0x00 {
+		t.Fatalf("packet id = %d", packetID)
+	}
+
+	var doc struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatalf("disconnect json: %v", err)
+	}
+	if doc.Text != messageRoomNotFound {
+		t.Fatalf("text = %q", doc.Text)
 	}
 }
 

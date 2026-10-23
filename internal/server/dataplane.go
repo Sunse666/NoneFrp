@@ -27,6 +27,8 @@ const (
 	openStreamTimeout = 10 * time.Second
 	// dialerWait is how long a player waits for a room data session to appear.
 	dialerWait = 2 * time.Second
+	// rejectTimeout bounds how long a rejection may take to deliver.
+	rejectTimeout = 10 * time.Second
 )
 
 // dataplane tracks the live data sessions of all rooms.
@@ -269,19 +271,19 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		return
 	}
 	if _, ok := s.rooms.Get(roomCode); !ok {
-		log.Debug("dropping player: unknown room", "host", handshake.ServerAddress)
-		_ = conn.Close()
+		log.Debug("rejecting player: unknown room", "host", handshake.ServerAddress)
+		s.rejectPlayer(conn, handshake, messageRoomNotFound)
 		return
 	}
 	dialer, ok := s.plane.waitDialer(roomCode, dialerWait)
 	if !ok {
-		log.Debug("dropping player: room has no data session", "room", roomCode)
-		_ = conn.Close()
+		log.Debug("rejecting player: room has no data session", "room", roomCode)
+		s.rejectPlayer(conn, handshake, messageHostOffline)
 		return
 	}
 	if !s.plane.acquire(roomCode, s.cfg.Limits.MaxStreamsPerRoom) {
-		log.Warn("dropping player: room reached its stream limit", "room", roomCode)
-		_ = conn.Close()
+		log.Warn("rejecting player: room reached its stream limit", "room", roomCode)
+		s.rejectPlayer(conn, handshake, messageRoomFull)
 		return
 	}
 	defer s.plane.release(roomCode)
@@ -319,6 +321,42 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		"down", result.Down,
 		"error", result.Err,
 	)
+}
+
+// Player facing rejection messages. These are the only strings a player sees,
+// so they are written in the language of the player, not the developer.
+const (
+	messageRoomNotFound = "房间不存在，请检查地址是否输入正确"
+	messageHostOffline  = "房主暂时不在线，请稍后再试"
+	messageRoomFull     = "房间已满，请稍后再试"
+)
+
+// rejectPlayer explains why a player cannot be routed. A server list ping gets
+// a synthetic entry so the reason is visible in the multiplayer screen, and a
+// login attempt gets a normal disconnect screen.
+func (s *Server) rejectPlayer(conn net.Conn, handshake mcproto.Handshake, message string) {
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(rejectTimeout))
+
+	if handshake.NextState != mcproto.NextStateStatus {
+		if err := mcproto.WriteLoginDisconnect(conn, message); err != nil {
+			s.log.Debug("sending a login rejection failed", "error", err)
+		}
+		return
+	}
+
+	// The protocol version must be echoed back, otherwise clients report a
+	// version mismatch instead of showing the message.
+	reply := mcproto.StatusReply{
+		ProtocolVersion: handshake.ProtocolVersion,
+		VersionName:     "NoneFrp",
+		Description:     message,
+		Online:          0,
+		Max:             0,
+	}
+	if err := mcproto.ServeStatusReply(conn, reply); err != nil {
+		s.log.Debug("sending a status rejection failed", "error", err)
+	}
 }
 
 // roomCodeFromHost extracts the room code from a handshake host such as
