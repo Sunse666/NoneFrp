@@ -21,8 +21,6 @@ const (
 	MaxServerAddress = 255
 	// maxVarIntBytes is the protocol limit for a VarInt.
 	maxVarIntBytes = 5
-	// legacyPingByte starts the pre-1.7 server list ping.
-	legacyPingByte = 0xfe
 	// handshakePacketID is the id of the opening packet.
 	handshakePacketID = 0x00
 )
@@ -37,9 +35,8 @@ const (
 
 // Errors returned while reading a handshake.
 var (
-	ErrMalformed  = errors.New("malformed handshake")
-	ErrTooLarge   = errors.New("handshake too large")
-	ErrLegacyPing = errors.New("legacy server list ping")
+	ErrMalformed = errors.New("malformed handshake")
+	ErrTooLarge  = errors.New("handshake too large")
 )
 
 // Handshake is the decoded opening packet.
@@ -132,9 +129,6 @@ func readVarIntBytes(r io.Reader, raw *[]byte) (int, error) {
 			return 0, fmt.Errorf("%w: %v", ErrMalformed, err)
 		}
 		b := buf[0]
-		if i == 0 && b == legacyPingByte {
-			return 0, ErrLegacyPing
-		}
 		*raw = append(*raw, b)
 		value |= uint32(b&0x7f) << (7 * i)
 		if b&0x80 == 0 {

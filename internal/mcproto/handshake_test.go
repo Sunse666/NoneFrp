@@ -134,9 +134,40 @@ func TestReadHandshakeRejectsBadNextState(t *testing.T) {
 	}
 }
 
-func TestReadHandshakeDetectsLegacyPing(t *testing.T) {
-	if _, err := ReadHandshake(bytes.NewReader([]byte{legacyPingByte, 0x01})); !errors.Is(err, ErrLegacyPing) {
-		t.Fatalf("err = %v, want ErrLegacyPing", err)
+// A handshake whose length prefix starts with 0xFE must still parse: 0xFE is
+// an ordinary continuation byte for body lengths of 126 and above.
+func TestReadHandshakeAcceptsLongAddress(t *testing.T) {
+	// Find the address length whose body encodes to a length prefix starting
+	// with 0xFE - the byte that used to be mistaken for a legacy ping.
+	const suffix = ".mc.example.com"
+	var (
+		address string
+		packet  []byte
+	)
+	for n := 200; n <= MaxServerAddress; n++ {
+		address = strings.Repeat("a", n-len(suffix)) + suffix
+		packet = buildHandshake(767, address, 25565, NextStateStatus)
+		if packet[0] == 0xfe {
+			break
+		}
+	}
+	if packet[0] != 0xfe {
+		t.Skip("no address length produced a 0xFE length prefix")
+	}
+
+	if len(packet) < 127 {
+		t.Fatalf("test setup: packet is only %d bytes, length prefix does not start with 0xFE", len(packet))
+	}
+	if packet[0] != 0xfe {
+		t.Fatalf("test setup: first byte = %#x, want 0xfe", packet[0])
+	}
+
+	got, err := ReadHandshake(bytes.NewReader(packet))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got.ServerAddress != address {
+		t.Fatalf("address = %q", got.ServerAddress)
 	}
 }
 
