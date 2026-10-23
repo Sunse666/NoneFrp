@@ -1,0 +1,26 @@
+# Host agent configuration.
+# Copy to client.yaml next to the binary and edit. client.yaml is git-ignored
+# because it holds the access token.
+
+# Relay endpoints, tried in order. The first healthy one wins.
+relay:
+  - name: "default"
+    url: "wss://relay.example.com"
+
+# Local Minecraft server port to forward to.
+local:
+  port: 25565
+  # Allow forwarding to a non-loopback address on the local network.
+  allow_lan: false
+
+room:
+  # "auto" lets the server assign a room code, or pin a code yourself.
+  code: "auto"
+
+# Access token issued by "nonerp server token new".
+token: ""
+
+ui:
+  # Serve the local web UI and open it in the default browser.
+  enabled: true
+  open_browser: true

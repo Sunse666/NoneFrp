@@ -1,5 +1,6 @@
 # design notes (kept local unless decided otherwise)
 docs/
+CONTRIBUTING.md
 
 # --- Go ---
 /bin/

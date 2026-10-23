@@ -1,0 +1,26 @@
+# Relay server configuration.
+# Copy to server.yaml next to the binary and edit. server.yaml is git-ignored
+# because it holds access tokens.
+
+# Where the relay listens for agent control connections.
+# Keep it on loopback when a reverse proxy terminates TLS in front of it.
+listen: "127.0.0.1:8080"
+
+# Public port players connect to. One port serves every room; the room is
+# selected from the server address inside the Minecraft handshake packet.
+public_port: 25565
+
+# Rooms are addressed as <room>.domain_suffix, e.g. a1b2.mc.example.com
+domain_suffix: "mc.example.com"
+
+# How long a room survives after its agent disconnects.
+grace_period: 60s
+
+limits:
+  max_players_per_room: 10
+  max_streams_per_room: 64
+  conn_rate_per_ip: 20
+
+# Access tokens handed out with "nonerp server token new".
+tokens:
+  # NFRP-7K2M: "example host"
