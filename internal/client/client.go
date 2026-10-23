@@ -37,6 +37,7 @@ type Client struct {
 	cfg      config.Client
 	log      *slog.Logger
 	deviceID string
+	status   *statusStore
 
 	// OnRegistered is called for every successful registration.
 	OnRegistered func(protocol.Registered)
@@ -60,8 +61,18 @@ func New(cfg config.Client, dataDir string, logger *slog.Logger) (*Client, error
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cfg: cfg, log: logger, deviceID: deviceID}, nil
+	status := newStatusStore()
+	status.with(func(st *Status) {
+		st.DeviceID = deviceID
+		st.LocalPort = cfg.Local.Port
+		st.ProxyProtocol = cfg.Local.ProxyProtocol
+	})
+
+	return &Client{cfg: cfg, log: logger, deviceID: deviceID, status: status}, nil
 }
+
+// Status returns a snapshot of the agent state.
+func (c *Client) Status() Status { return c.status.snapshot() }
 
 // DeviceID returns the stable identifier used to reclaim rooms after a restart.
 func (c *Client) DeviceID() string { return c.deviceID }
@@ -149,6 +160,8 @@ func (c *Client) connect(ctx context.Context, relay config.Relay) (bool, error) 
 		"public", registered.PublicHost,
 		"port", registered.PublicPort,
 	)
+	c.status.markConnected(relay.URL, registered.RoomCode, registered.PublicHost, registered.PublicPort)
+
 	if c.OnRegistered != nil {
 		c.OnRegistered(registered)
 	}
@@ -174,6 +187,8 @@ func (c *Client) connect(ctx context.Context, relay config.Relay) (bool, error) 
 	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	err = c.readLoop(conn)
+	c.status.markDisconnected(err)
+
 	if c.OnRelayGone != nil {
 		c.OnRelayGone(relay.URL, err)
 	}

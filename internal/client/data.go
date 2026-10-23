@@ -126,7 +126,9 @@ func (c *Client) serveStream(stream net.Conn, meta protocol.StreamMeta) {
 		}
 	}
 
+	c.status.streamStarted()
 	result := proxy.Splice(stream, local, proxy.DefaultIdleTimeout)
+	c.status.streamFinished(result.Up, result.Down)
 	c.log.Debug("stream finished",
 		"trace", meta.TraceID,
 		"up", result.Up,

@@ -166,6 +166,48 @@ func TestServeStreamSendsProxyProtocolHeader(t *testing.T) {
 	}
 }
 
+func TestServeStreamUpdatesStatus(t *testing.T) {
+	reply := []byte("pong!")
+	port := fakeMinecraft(t, reply)
+
+	cfg := config.DefaultClient()
+	cfg.Local.Port = port
+	cfg.Token = "NFRP-TESTTEST"
+	cfg.Relay = []config.Relay{{Name: "test", URL: "ws://127.0.0.1:1"}}
+
+	agent, err := New(cfg, t.TempDir(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	if got := agent.Status().Players; got != 0 {
+		t.Fatalf("players = %d before any connection", got)
+	}
+
+	agentSide, playerSide := net.Pipe()
+	defer func() { _ = playerSide.Close() }()
+	go agent.serveStream(agentSide, protocol.StreamMeta{TraceID: "trace"})
+
+	_ = playerSide.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := playerSide.Write([]byte("h")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got := make([]byte, len(reply))
+	if _, err := io.ReadFull(playerSide, got); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	_ = playerSide.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		status := agent.Status()
+		if status.Players == 0 && status.BytesUp == 1 && status.BytesDown == int64(len(reply)) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("status = %+v", agent.Status())
+}
+
 func TestServeStreamReportsUnreachableLocalServer(t *testing.T) {
 	// Bind and close a listener to obtain a port that nothing listens on.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
