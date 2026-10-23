@@ -152,6 +152,15 @@ func (r *Registry) Touch(code string) bool {
 	return true
 }
 
+// SetPublicHost records the address players should connect to.
+func (r *Registry) SetPublicHost(code, host string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if found, ok := r.rooms[code]; ok {
+		found.PublicHost = host
+	}
+}
+
 // MarkGrace starts the grace period for a room whose agent disconnected.
 func (r *Registry) MarkGrace(code string) {
 	r.mu.Lock()
