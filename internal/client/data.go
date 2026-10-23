@@ -14,6 +14,7 @@ import (
 
 	"github.com/Sunse666/NoneFrp/internal/channel"
 	"github.com/Sunse666/NoneFrp/internal/config"
+	"github.com/Sunse666/NoneFrp/internal/mcproto"
 	"github.com/Sunse666/NoneFrp/internal/protocol"
 	"github.com/Sunse666/NoneFrp/internal/proxy"
 )
@@ -114,6 +115,16 @@ func (c *Client) serveStream(stream net.Conn, meta protocol.StreamMeta) {
 		return
 	}
 	defer func() { _ = local.Close() }()
+
+	if c.cfg.Local.ProxyProtocol && meta.ClientIP != "" {
+		header, err := mcproto.ProxyHeader(meta.ClientIP, meta.ClientPort, "127.0.0.1", c.cfg.Local.Port)
+		if err != nil {
+			c.log.Warn("skipping the proxy protocol header", "trace", meta.TraceID, "error", err)
+		} else if _, err := local.Write(header); err != nil {
+			c.log.Warn("writing the proxy protocol header failed", "trace", meta.TraceID, "error", err)
+			return
+		}
+	}
 
 	result := proxy.Splice(stream, local, proxy.DefaultIdleTimeout)
 	c.log.Debug("stream finished",

@@ -12,6 +12,11 @@ local:
   port: 25565
   # Allow forwarding to a non-loopback address on the local network.
   allow_lan: false
+  # Prefix each forwarded connection with a PROXY protocol header so the local
+  # server sees the real player address. Enable it on the server side too:
+  #   server.properties -> proxy-protocol: true
+  #                       prevent-proxy-connections: false
+  proxy_protocol: false
 
 room:
   # "auto" lets the server assign a room code, or pin a code yourself.

@@ -1,12 +1,14 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"net"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -106,6 +108,61 @@ func TestServeStreamForwardsToLocalServer(t *testing.T) {
 	}
 	if !bytes.Equal(got, reply) {
 		t.Fatalf("got %q, want %q", got, reply)
+	}
+}
+
+func TestServeStreamSendsProxyProtocolHeader(t *testing.T) {
+	lines := make(chan string, 1)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		reader := bufio.NewReader(conn)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+		lines <- line
+		_, _ = conn.Write([]byte("ok"))
+	}()
+
+	cfg := config.DefaultClient()
+	cfg.Local.Port = ln.Addr().(*net.TCPAddr).Port
+	cfg.Local.ProxyProtocol = true
+	cfg.Token = "NFRP-TESTTEST"
+	cfg.Relay = []config.Relay{{Name: "test", URL: "ws://127.0.0.1:1"}}
+
+	agent, err := New(cfg, t.TempDir(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	agentSide, playerSide := net.Pipe()
+	defer func() { _ = playerSide.Close() }()
+	go agent.serveStream(agentSide, protocol.StreamMeta{ClientIP: "198.51.100.9", ClientPort: 54321})
+
+	_ = playerSide.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := playerSide.Write([]byte("h")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case line := <-lines:
+		want := "PROXY TCP4 198.51.100.9 127.0.0.1 54321 " + strconv.Itoa(cfg.Local.Port) + "\r\n"
+		if line != want {
+			t.Fatalf("header = %q, want %q", line, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no proxy protocol header was written")
 	}
 }
 

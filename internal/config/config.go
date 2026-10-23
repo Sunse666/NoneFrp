@@ -66,6 +66,10 @@ type Relay struct {
 type Local struct {
 	Port     int  `yaml:"port"`
 	AllowLAN bool `yaml:"allow_lan"`
+	// ProxyProtocol prefixes every forwarded connection with a PROXY protocol
+	// header so the local server sees the real player address. It must be
+	// enabled on the server side too (Paper/Spigot: proxy-protocol: true).
+	ProxyProtocol bool `yaml:"proxy_protocol"`
 }
 
 // Room describes how the agent asks for a room.
