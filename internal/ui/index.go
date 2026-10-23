@@ -86,6 +86,16 @@ const indexHTML = `<!doctype html>
     <div class="error" id="error" style="display:none"></div>
   </section>
 
+  {{if .Direct}}
+  <section class="card">
+    <div class="label">直连地址（不经过中继）</div>
+    {{range .Direct}}<div class="row"><span class="k">·</span><span>{{.}}</span></div>{{end}}
+    <div class="muted" style="margin-top:8px">
+      同一局域网的朋友用第一个地址最快。公网地址要求对方的网络也能直连过来，通常需要路由器放行、或对方具备 IPv6；连不通就走上面的中继地址。
+    </div>
+  </section>
+  {{end}}
+
   <div class="grid">
     <section class="card">
       <div class="label">在线玩家</div>

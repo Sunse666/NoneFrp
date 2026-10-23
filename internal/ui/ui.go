@@ -22,6 +22,7 @@ import (
 
 	"github.com/Sunse666/NoneFrp/internal/client"
 	"github.com/Sunse666/NoneFrp/internal/config"
+	"github.com/Sunse666/NoneFrp/internal/netinfo"
 )
 
 // Source provides the data rendered by the interface.
@@ -138,6 +139,7 @@ type pageData struct {
 	Relays        string
 	Token         string
 	LocalPort     int
+	Direct        []string
 	RoomCode      string
 	ProxyProtocol bool
 	Editable      bool
@@ -167,6 +169,10 @@ func (s *Server) buildPage(r *http.Request) pageData {
 	data.LocalPort = cfg.Local.Port
 	data.RoomCode = cfg.Room.Code
 	data.ProxyProtocol = cfg.Local.ProxyProtocol
+
+	for _, candidate := range netinfo.Candidates() {
+		data.Direct = append(data.Direct, netinfo.Describe(candidate, cfg.Local.Port))
+	}
 	return data
 }
 
