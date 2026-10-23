@@ -76,6 +76,7 @@ func runServer(args []string) error {
 
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	configPath := fs.String("config", "server.yaml", "path to the server configuration file")
+	debug := fs.Bool("debug", false, "log every player connection and rejection")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
 	}
@@ -88,7 +89,7 @@ func runServer(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return server.New(cfg, newLogger()).Run(ctx)
+	return server.New(cfg, newLogger(*debug)).Run(ctx)
 }
 
 func runServerToken(args []string) error {
@@ -188,6 +189,7 @@ func runClient(args []string) error {
 	configPath := fs.String("config", "client.yaml", "path to the client configuration file")
 	relay := fs.String("relay", "", "override the relay url for this run")
 	token := fs.String("token", "", "override the access token for this run")
+	debug := fs.Bool("debug", false, "log every forwarded stream")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
 	}
@@ -207,7 +209,8 @@ func runClient(args []string) error {
 	}
 
 	dataDir := filepath.Dir(*configPath)
-	agent, err := client.New(cfg, dataDir, newLogger())
+	logger := newLogger(*debug)
+	agent, err := client.New(cfg, dataDir, logger)
 	if err != nil {
 		return err
 	}
@@ -215,14 +218,14 @@ func runClient(args []string) error {
 		fmt.Printf("room ready: %s:%d\n", r.PublicHost, r.PublicPort)
 	}
 	agent.OnRelayGone = func(relayURL string, err error) {
-		newLogger().Warn("control connection lost", "relay", relayURL, "error", err)
+		logger.Warn("control connection lost", "relay", relayURL, "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if cfg.UI.Enabled {
-		webUI, err := ui.New(agent, "", newLogger())
+		webUI, err := ui.New(agent, "", logger)
 		if err != nil {
 			return err
 		}
@@ -233,7 +236,7 @@ func runClient(args []string) error {
 		fmt.Printf("web ui: %s\n", base)
 		if cfg.UI.OpenBrowser {
 			if err := ui.OpenBrowser(base); err != nil {
-				newLogger().Warn("could not open a browser", "error", err)
+				logger.Warn("could not open a browser", "error", err)
 			}
 		}
 	}
@@ -241,8 +244,12 @@ func runClient(args []string) error {
 	return agent.Run(ctx)
 }
 
-func newLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+func newLogger(debug bool) *slog.Logger {
+	level := slog.LevelInfo
+	if debug {
+		level = slog.LevelDebug
+	}
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
 func printUsage() {
