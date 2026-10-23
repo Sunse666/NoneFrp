@@ -48,8 +48,11 @@ type Limits struct {
 
 // Server is the relay server configuration.
 type Server struct {
-	Listen       string            `yaml:"listen"`
-	PublicPort   int               `yaml:"public_port"`
+	Listen     string `yaml:"listen"`
+	PublicPort int    `yaml:"public_port"`
+	// PublicURL is the websocket address agents connect to, used to build join
+	// links. It is normally the reverse proxy endpoint, e.g. wss://relay.example.com.
+	PublicURL    string            `yaml:"public_url"`
 	DomainSuffix string            `yaml:"domain_suffix"`
 	GracePeriod  Duration          `yaml:"grace_period"`
 	Limits       Limits            `yaml:"limits"`
@@ -191,6 +194,9 @@ func (s Server) Validate() error {
 	}
 	if s.GracePeriod.Std() < 0 {
 		return fmt.Errorf("grace_period must not be negative")
+	}
+	if s.PublicURL != "" && !strings.HasPrefix(s.PublicURL, "ws://") && !strings.HasPrefix(s.PublicURL, "wss://") {
+		return fmt.Errorf("public_url %q must start with ws:// or wss://", s.PublicURL)
 	}
 	return nil
 }

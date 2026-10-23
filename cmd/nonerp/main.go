@@ -17,6 +17,7 @@ import (
 	"github.com/Sunse666/NoneFrp/internal/auth"
 	"github.com/Sunse666/NoneFrp/internal/client"
 	"github.com/Sunse666/NoneFrp/internal/config"
+	"github.com/Sunse666/NoneFrp/internal/link"
 	"github.com/Sunse666/NoneFrp/internal/protocol"
 	"github.com/Sunse666/NoneFrp/internal/server"
 )
@@ -63,8 +64,13 @@ func run(args []string) error {
 }
 
 func runServer(args []string) error {
-	if len(args) > 0 && args[0] == "token" {
-		return runServerToken(args[1:])
+	if len(args) > 0 {
+		switch args[0] {
+		case "token":
+			return runServerToken(args[1:])
+		case "link":
+			return runServerLink(args[1:])
+		}
 	}
 
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
@@ -139,6 +145,43 @@ func runServerToken(args []string) error {
 	}
 }
 
+func runServerLink(args []string) error {
+	fs := flag.NewFlagSet("server link", flag.ContinueOnError)
+	configPath := fs.String("config", "server.yaml", "path to the server configuration file")
+	token := fs.String("token", "", "access token to embed in the link")
+	relayURL := fs.String("relay", "", "relay url, defaults to public_url in the config")
+	room := fs.String("room", "auto", "room code the agent should request")
+	if err := fs.Parse(args); err != nil {
+		return errUsage
+	}
+
+	cfg, err := config.LoadServer(*configPath)
+	if err != nil {
+		return err
+	}
+	if *token == "" {
+		return fmt.Errorf("the -token flag is required")
+	}
+	if _, ok := cfg.Tokens[*token]; !ok {
+		return fmt.Errorf("token %q has not been issued by this relay", *token)
+	}
+
+	target := *relayURL
+	if target == "" {
+		target = cfg.PublicURL
+	}
+	if target == "" {
+		return fmt.Errorf("no relay url: set public_url in %s or pass -relay", *configPath)
+	}
+
+	built, err := link.JoinLink(target, *token, *room)
+	if err != nil {
+		return err
+	}
+	fmt.Println(built)
+	return nil
+}
+
 func runClient(args []string) error {
 	fs := flag.NewFlagSet("client", flag.ContinueOnError)
 	configPath := fs.String("config", "client.yaml", "path to the client configuration file")
@@ -193,6 +236,7 @@ Commands:
   server              run the relay server
   server token new    issue an access token and store it in the config
   server token ls     list issued access tokens
+  server link         print a join link for a token
   client              run the host agent
   version             print version information
   help                print this message
