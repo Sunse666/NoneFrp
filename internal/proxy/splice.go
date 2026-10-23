@@ -27,15 +27,25 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
+// LoginIdleTimeout is the idle limit for connections that carry a real game
+// session. Minecraft exchanges keep-alive packets every fifteen seconds, so a
+// minute of silence means the player is gone even if the socket still looks
+// healthy.
+const LoginIdleTimeout = 60 * time.Second
+
 // Options tune how Splice behaves.
 type Options struct {
 	// Idle closes the pair after this long without traffic. Zero disables it.
 	Idle time.Duration
-	// CloseOnUpstreamEOF ends both connections as soon as the second connection
+	// CloseOnServerEOF ends both connections as soon as the second connection
 	// stops sending. A Minecraft server closes the connection when the session
 	// is over, so waiting for the client to close as well would leave zombie
 	// streams behind every kick.
-	CloseOnUpstreamEOF bool
+	CloseOnServerEOF bool
+	// CloseOnClientEOF ends both connections as soon as the first connection
+	// stops sending. It must stay off for status pings, where the client
+	// legitimately shuts down its write side and then waits for the reply.
+	CloseOnClientEOF bool
 }
 
 // Result reports how many bytes travelled in each direction.
@@ -74,16 +84,22 @@ func SpliceWith(a, b net.Conn, opts Options) Result {
 
 	go func() {
 		defer wg.Done()
-		// A client half-close is normal (a status ping does exactly that), so it
-		// must never end the pair on its own.
+		// A client half-close is normal during a status ping, so it only ends the
+		// pair when the caller says this is a real game session.
 		n, err := copyDirection(b, a, opts.Idle)
+		if err != nil || opts.CloseOnClientEOF {
+			// A broken connection or a vanished player: nothing useful can follow.
+			upstreamClosed.Store(true)
+			_ = a.Close()
+			_ = b.Close()
+		}
 		results <- outcome{up: true, n: n, err: err}
 	}()
 
 	go func() {
 		defer wg.Done()
 		n, err := copyDirection(a, b, opts.Idle)
-		if err == nil && opts.CloseOnUpstreamEOF {
+		if err != nil || opts.CloseOnServerEOF {
 			// The server is done sending, which for Minecraft means the session
 			// is over. Stop waiting for the client and tear the pair down.
 			upstreamClosed.Store(true)

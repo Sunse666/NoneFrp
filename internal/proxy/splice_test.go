@@ -152,7 +152,7 @@ func TestSpliceWithEndsWhenUpstreamCloses(t *testing.T) {
 
 	done := make(chan Result, 1)
 	go func() {
-		done <- SpliceWith(spliceA, spliceB, Options{CloseOnUpstreamEOF: true})
+		done <- SpliceWith(spliceA, spliceB, Options{CloseOnServerEOF: true})
 	}()
 
 	// The client keeps its side wide open, exactly like a kicked player that
@@ -191,7 +191,7 @@ func TestSpliceWithStillForwardsClientHalfClose(t *testing.T) {
 
 	done := make(chan Result, 1)
 	go func() {
-		done <- SpliceWith(spliceA, spliceB, Options{CloseOnUpstreamEOF: true})
+		done <- SpliceWith(spliceA, spliceB, Options{CloseOnServerEOF: true})
 	}()
 
 	if _, err := client.Write([]byte("status request")); err != nil {
@@ -229,6 +229,119 @@ func TestSpliceWithStillForwardsClientHalfClose(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("splice did not return")
+	}
+}
+
+func TestSpliceWithEndsWhenClientVanishes(t *testing.T) {
+	clientA, spliceA := dialPair(t)
+	spliceB, serverB := dialPair(t)
+
+	done := make(chan Result, 1)
+	go func() {
+		done <- SpliceWith(spliceA, spliceB, Options{
+			CloseOnServerEOF: true,
+			CloseOnClientEOF: true,
+		})
+	}()
+
+	if _, err := clientA.Write([]byte("hello")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	buf := make([]byte, 5)
+	_ = serverB.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := io.ReadFull(serverB, buf); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	// The player vanishes: the socket closes but the game server would happily
+	// keep sending into a dead connection.
+	_ = clientA.Close()
+
+	select {
+	case res := <-done:
+		if res.Up != 5 {
+			t.Fatalf("up = %d", res.Up)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("splice kept waiting after the client closed mid-session")
+	}
+
+	_ = serverB.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err := serverB.Read(buf)
+	if err == nil {
+		t.Fatal("expected the server connection to be closed")
+	}
+}
+
+func TestSpliceWithKeepsClientHalfCloseForStatus(t *testing.T) {
+	client, spliceA := dialPair(t)
+	spliceB, server := dialPair(t)
+
+	done := make(chan Result, 1)
+	go func() {
+		// This mirrors a server list ping: the client never closes for good, it
+		// just stops writing and waits.
+		done <- SpliceWith(spliceA, spliceB, Options{CloseOnServerEOF: true})
+	}()
+
+	if _, err := client.Write([]byte("ping")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := client.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatalf("close write: %v", err)
+	}
+
+	_ = server.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := io.ReadAll(server); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	// The reply must still be possible after the client half-closed.
+	if _, err := server.Write([]byte("pong")); err != nil {
+		t.Fatalf("write reply: %v", err)
+	}
+	_ = server.Close()
+
+	_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got, err := io.ReadAll(client)
+	if err != nil {
+		t.Fatalf("read reply: %v", err)
+	}
+	if string(got) != "pong" {
+		t.Fatalf("client read %q", got)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("splice did not return")
+	}
+}
+
+// A silent connection (unplugged cable, dead router) never produces a FIN, so
+// the idle timeout is the only thing that can end it.
+func TestSpliceWithEndsOnIdleTimeout(t *testing.T) {
+	clientA, spliceA := dialPair(t)
+	spliceB, serverB := dialPair(t)
+	_ = clientA
+	_ = serverB
+
+	done := make(chan Result, 1)
+	go func() {
+		done <- SpliceWith(spliceA, spliceB, Options{
+			Idle:             150 * time.Millisecond,
+			CloseOnServerEOF: true,
+			CloseOnClientEOF: true,
+		})
+	}()
+
+	select {
+	case res := <-done:
+		if res.Err == nil {
+			t.Fatal("expected the idle timeout to be reported")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("an idle connection was never closed")
 	}
 }
 

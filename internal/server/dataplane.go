@@ -362,10 +362,17 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		return
 	}
 
-	result := proxy.SpliceWith(conn, stream, proxy.Options{
-		Idle:               proxy.DefaultIdleTimeout,
-		CloseOnUpstreamEOF: true,
-	})
+	options := proxy.Options{
+		Idle:             proxy.DefaultIdleTimeout,
+		CloseOnServerEOF: true,
+	}
+	if handshake.NextState == mcproto.NextStateLogin {
+		// A player who closes the connection mid-game is gone; do not wait for
+		// the server to notice.
+		options.CloseOnClientEOF = true
+		options.Idle = proxy.LoginIdleTimeout
+	}
+	result := proxy.SpliceWith(conn, stream, options)
 	log.Debug("player connection finished",
 		"room", roomCode,
 		"up", result.Up,

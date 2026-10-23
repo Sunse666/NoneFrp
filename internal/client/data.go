@@ -132,10 +132,15 @@ func (c *Client) serveStream(stream net.Conn, meta protocol.StreamMeta) {
 		c.status.streamStarted()
 	}
 
-	result := proxy.SpliceWith(stream, local, proxy.Options{
-		Idle:               proxy.DefaultIdleTimeout,
-		CloseOnUpstreamEOF: true,
-	})
+	options := proxy.Options{
+		Idle:             proxy.DefaultIdleTimeout,
+		CloseOnServerEOF: true,
+	}
+	if isPlayer {
+		options.CloseOnClientEOF = true
+		options.Idle = proxy.LoginIdleTimeout
+	}
+	result := proxy.SpliceWith(stream, local, options)
 	c.status.streamFinished(isPlayer, result.Up, result.Down)
 	c.log.Debug("stream finished",
 		"trace", meta.TraceID,
