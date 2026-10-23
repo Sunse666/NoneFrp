@@ -146,6 +146,92 @@ func TestSpliceTimesOutIdleConnections(t *testing.T) {
 	}
 }
 
+func TestSpliceWithEndsWhenUpstreamCloses(t *testing.T) {
+	clientA, spliceA := dialPair(t)
+	spliceB, serverB := dialPair(t)
+
+	done := make(chan Result, 1)
+	go func() {
+		done <- SpliceWith(spliceA, spliceB, Options{CloseOnUpstreamEOF: true})
+	}()
+
+	// The client keeps its side wide open, exactly like a kicked player that
+	// does not notice. The server closing must still end the pair.
+	if _, err := clientA.Write([]byte("hello")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	buf := make([]byte, 5)
+	_ = serverB.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := io.ReadFull(serverB, buf); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	_ = serverB.Close()
+
+	select {
+	case res := <-done:
+		if res.Up != 5 {
+			t.Fatalf("up = %d", res.Up)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("splice kept waiting after the upstream closed")
+	}
+
+	// The client must see the connection go away instead of hanging.
+	_ = clientA.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err := clientA.Read(buf)
+	if err == nil {
+		t.Fatal("expected the client connection to be closed")
+	}
+}
+
+func TestSpliceWithStillForwardsClientHalfClose(t *testing.T) {
+	client, spliceA := dialPair(t)
+	spliceB, server := dialPair(t)
+
+	done := make(chan Result, 1)
+	go func() {
+		done <- SpliceWith(spliceA, spliceB, Options{CloseOnUpstreamEOF: true})
+	}()
+
+	if _, err := client.Write([]byte("status request")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := client.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatalf("close write: %v", err)
+	}
+
+	_ = server.SetReadDeadline(time.Now().Add(3 * time.Second))
+	request, err := io.ReadAll(server)
+	if err != nil {
+		t.Fatalf("read all: %v", err)
+	}
+	if string(request) != "status request" {
+		t.Fatalf("server read %q", request)
+	}
+
+	// The client is done writing, but the reply direction must stay usable.
+	if _, err := server.Write([]byte("status response")); err != nil {
+		t.Fatalf("write response: %v", err)
+	}
+	_ = server.Close()
+
+	_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	response, err := io.ReadAll(client)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	if string(response) != "status response" {
+		t.Fatalf("client read %q", response)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("splice did not return")
+	}
+}
+
 func TestSpliceReturnsByteCounts(t *testing.T) {
 	clientA, spliceA := dialPair(t)
 	spliceB, serverB := dialPair(t)

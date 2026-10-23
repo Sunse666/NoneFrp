@@ -362,7 +362,10 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		return
 	}
 
-	result := proxy.Splice(conn, stream, proxy.DefaultIdleTimeout)
+	result := proxy.SpliceWith(conn, stream, proxy.Options{
+		Idle:               proxy.DefaultIdleTimeout,
+		CloseOnUpstreamEOF: true,
+	})
 	log.Debug("player connection finished",
 		"room", roomCode,
 		"up", result.Up,

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,13 +27,24 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
+// Options tune how Splice behaves.
+type Options struct {
+	// Idle closes the pair after this long without traffic. Zero disables it.
+	Idle time.Duration
+	// CloseOnUpstreamEOF ends both connections as soon as the second connection
+	// stops sending. A Minecraft server closes the connection when the session
+	// is over, so waiting for the client to close as well would leave zombie
+	// streams behind every kick.
+	CloseOnUpstreamEOF bool
+}
+
 // Result reports how many bytes travelled in each direction.
 type Result struct {
 	// Up is the number of bytes copied from the first connection to the second.
 	Up int64
 	// Down is the number of bytes copied from the second connection to the first.
 	Down int64
-	// Err is the first non-EOF error seen in either direction.
+	// Err is the first unexpected error seen in either direction.
 	Err error
 }
 
@@ -42,9 +54,13 @@ func (r Result) Timeout() bool {
 	return errors.As(r.Err, &netErr) && netErr.Timeout()
 }
 
-// Splice copies bytes both ways between a and b until both directions finish,
-// then closes both. An idle of zero means no idle timeout.
+// Splice copies bytes both ways and keeps half-close semantics.
 func Splice(a, b net.Conn, idle time.Duration) Result {
+	return SpliceWith(a, b, Options{Idle: idle})
+}
+
+// SpliceWith copies bytes both ways using the given options.
+func SpliceWith(a, b net.Conn, opts Options) Result {
 	type outcome struct {
 		up  bool
 		n   int64
@@ -52,16 +68,28 @@ func Splice(a, b net.Conn, idle time.Duration) Result {
 	}
 	results := make(chan outcome, 2)
 
+	var upstreamClosed atomic.Bool
 	var wg sync.WaitGroup
 	wg.Add(2)
+
 	go func() {
 		defer wg.Done()
-		n, err := copyDirection(b, a, idle)
+		// A client half-close is normal (a status ping does exactly that), so it
+		// must never end the pair on its own.
+		n, err := copyDirection(b, a, opts.Idle)
 		results <- outcome{up: true, n: n, err: err}
 	}()
+
 	go func() {
 		defer wg.Done()
-		n, err := copyDirection(a, b, idle)
+		n, err := copyDirection(a, b, opts.Idle)
+		if err == nil && opts.CloseOnUpstreamEOF {
+			// The server is done sending, which for Minecraft means the session
+			// is over. Stop waiting for the client and tear the pair down.
+			upstreamClosed.Store(true)
+			_ = a.Close()
+			_ = b.Close()
+		}
 		results <- outcome{up: false, n: n, err: err}
 	}()
 
@@ -75,7 +103,7 @@ func Splice(a, b net.Conn, idle time.Duration) Result {
 		} else {
 			res.Down = got.n
 		}
-		if got.err != nil && res.Err == nil {
+		if got.err != nil && res.Err == nil && !isClosedErr(got.err) {
 			res.Err = got.err
 		}
 	}
@@ -120,4 +148,21 @@ func halfClose(conn net.Conn) {
 	if cw, ok := conn.(closeWriter); ok {
 		_ = cw.CloseWrite()
 	}
+}
+
+// isClosedErr reports whether err is the noise produced by us closing a
+// connection that the other direction is still using.
+func isClosedErr(err error) bool {
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return false
+	}
+	// Windows reports "use of closed network connection" as a plain error.
+	message := err.Error()
+	return message == "use of closed network connection" ||
+		message == "wsarecv: An existing connection was forcibly closed by the remote host." ||
+		message == "wsasend: An existing connection was forcibly closed by the remote host."
 }

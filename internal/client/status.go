@@ -73,9 +73,9 @@ func (s *statusStore) streamStarted() {
 	s.with(func(st *Status) { st.Players++ })
 }
 
-func (s *statusStore) streamFinished(up, down int64) {
+func (s *statusStore) streamFinished(player bool, up, down int64) {
 	s.with(func(st *Status) {
-		if st.Players > 0 {
+		if player && st.Players > 0 {
 			st.Players--
 		}
 		st.BytesUp += up

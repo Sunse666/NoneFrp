@@ -185,7 +185,7 @@ func TestServeStreamUpdatesStatus(t *testing.T) {
 
 	agentSide, playerSide := net.Pipe()
 	defer func() { _ = playerSide.Close() }()
-	go agent.serveStream(agentSide, protocol.StreamMeta{TraceID: "trace"})
+	go agent.serveStream(agentSide, protocol.StreamMeta{TraceID: "trace", NextState: mcproto.NextStateLogin})
 
 	_ = playerSide.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := playerSide.Write([]byte("h")); err != nil {
@@ -206,6 +206,67 @@ func TestServeStreamUpdatesStatus(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("status = %+v", agent.Status())
+}
+
+// A kicked player leaves a connection that the client may not close. The agent
+// must drop the stream as soon as the local server closes, or the player stays
+// in the online count until the idle timeout.
+func TestKickedPlayerLeavesTheCount(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		buf := make([]byte, 1)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return
+		}
+		// Stand in for Paper sending "Failed to verify username" and hanging up.
+		time.Sleep(300 * time.Millisecond)
+	}()
+
+	cfg := config.DefaultClient()
+	cfg.Local.Port = ln.Addr().(*net.TCPAddr).Port
+	cfg.Token = "NFRP-TESTTEST"
+	cfg.Relay = []config.Relay{{Name: "test", URL: "ws://127.0.0.1:1"}}
+
+	agent, err := New(cfg, t.TempDir(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	agentSide, playerSide := net.Pipe()
+	defer func() { _ = playerSide.Close() }()
+	go agent.serveStream(agentSide, protocol.StreamMeta{TraceID: "trace", NextState: mcproto.NextStateLogin})
+
+	_ = playerSide.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	_, _ = playerSide.Write([]byte("h"))
+
+	if got := waitForPlayers(t, agent, 1, 3*time.Second); got != 1 {
+		t.Fatalf("players = %d, want 1 while the connection is open", got)
+	}
+	if got := waitForPlayers(t, agent, 0, 5*time.Second); got != 0 {
+		t.Fatalf("players = %d, want 0 after the local server closed", got)
+	}
+}
+
+func waitForPlayers(t *testing.T, agent *Client, want int, timeout time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if got := agent.Status().Players; got == want {
+			return got
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return agent.Status().Players
 }
 
 func TestServeStreamReportsUnreachableLocalServer(t *testing.T) {

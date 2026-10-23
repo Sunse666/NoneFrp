@@ -126,9 +126,17 @@ func (c *Client) serveStream(stream net.Conn, meta protocol.StreamMeta) {
 		}
 	}
 
-	c.status.streamStarted()
-	result := proxy.Splice(stream, local, proxy.DefaultIdleTimeout)
-	c.status.streamFinished(result.Up, result.Down)
+	// Only real logins count as players; a server list ping is a stream too.
+	isPlayer := meta.NextState == mcproto.NextStateLogin
+	if isPlayer {
+		c.status.streamStarted()
+	}
+
+	result := proxy.SpliceWith(stream, local, proxy.Options{
+		Idle:               proxy.DefaultIdleTimeout,
+		CloseOnUpstreamEOF: true,
+	})
+	c.status.streamFinished(isPlayer, result.Up, result.Down)
 	c.log.Debug("stream finished",
 		"trace", meta.TraceID,
 		"up", result.Up,
