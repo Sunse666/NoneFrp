@@ -253,7 +253,15 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 // named in the handshake.
 func (s *Server) handlePlayer(conn net.Conn) {
 	traceID := newTraceID()
+	clientIP, clientPort := splitHostPort(conn.RemoteAddr())
 	log := s.log.With("trace", traceID, "player", conn.RemoteAddr().String())
+
+	if !s.limiter.allow(clientIP) {
+		// Scanners get no protocol reply at all, just a closed connection.
+		log.Debug("dropping player: rate limit exceeded")
+		_ = conn.Close()
+		return
+	}
 
 	_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 	handshake, err := mcproto.ReadHandshake(conn)
@@ -294,7 +302,7 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		RoomCode:  roomCode,
 		TraceID:   traceID,
 	}
-	meta.ClientIP, meta.ClientPort = splitHostPort(conn.RemoteAddr())
+	meta.ClientIP, meta.ClientPort = clientIP, clientPort
 
 	ctx, cancel := context.WithTimeout(context.Background(), openStreamTimeout)
 	defer cancel()

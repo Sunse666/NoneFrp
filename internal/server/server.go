@@ -40,6 +40,7 @@ type Server struct {
 	cfg            config.Server
 	rooms          *room.Registry
 	plane          *dataplane
+	limiter        *ipLimiter
 	log            *slog.Logger
 	upgrader       websocket.Upgrader
 	publicListener net.Listener
@@ -51,10 +52,11 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 		logger = slog.Default()
 	}
 	return &Server{
-		cfg:   cfg,
-		rooms: room.NewRegistry(cfg.GracePeriod.Std()),
-		plane: newDataplane(),
-		log:   logger,
+		cfg:     cfg,
+		rooms:   room.NewRegistry(cfg.GracePeriod.Std()),
+		plane:   newDataplane(),
+		limiter: newIPLimiter(cfg.Limits.ConnRatePerIP),
+		log:     logger,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
@@ -139,6 +141,7 @@ func (s *Server) reapLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			s.limiter.gc()
 			if removed := s.rooms.Reap(); removed > 0 {
 				s.log.Info("reaped expired rooms", "count", removed, "remaining", s.rooms.Len())
 				s.plane.retainOnly(s.liveRooms())
