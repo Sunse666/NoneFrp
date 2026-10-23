@@ -15,10 +15,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Sunse666/NoneFrp/internal/client"
+	"github.com/Sunse666/NoneFrp/internal/config"
 )
 
 // Source provides the data rendered by the interface.
@@ -26,17 +29,25 @@ type Source interface {
 	Status() client.Status
 }
 
+// Settings lets the interface read and change the agent configuration. When it
+// is nil the settings section is read only.
+type Settings interface {
+	Config() config.Client
+	Apply(cfg config.Client) error
+}
+
 // Server is the loopback web interface.
 type Server struct {
-	source Source
-	token  string
-	log    *slog.Logger
-	tmpl   *template.Template
+	source   Source
+	settings Settings
+	token    string
+	log      *slog.Logger
+	tmpl     *template.Template
 }
 
 // New returns a web interface for source. When token is empty a random one is
 // generated and used as the first path segment.
-func New(source Source, token string, logger *slog.Logger) (*Server, error) {
+func New(source Source, settings Settings, token string, logger *slog.Logger) (*Server, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -51,7 +62,7 @@ func New(source Source, token string, logger *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse ui template: %w", err)
 	}
-	return &Server{source: source, token: token, log: logger, tmpl: tmpl}, nil
+	return &Server{source: source, settings: settings, token: token, log: logger, tmpl: tmpl}, nil
 }
 
 // Token returns the path segment that guards the interface.
@@ -62,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/"+s.token+"/", s.handleIndex)
 	mux.HandleFunc("/"+s.token+"/api/status", s.handleStatus)
+	mux.HandleFunc("/"+s.token+"/settings", s.handleSettings)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		http.NotFound(w, nil)
 	})
@@ -119,11 +131,58 @@ func (s *Server) Start(ctx context.Context, addr string) (string, error) {
 	return base, nil
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
+// pageData is what the template renders.
+type pageData struct {
+	Base          string
+	CSRF          string
+	Relays        string
+	Token         string
+	LocalPort     int
+	RoomCode      string
+	ProxyProtocol bool
+	Editable      bool
+	Message       string
+	IsError       bool
+}
+
+func (s *Server) buildPage(r *http.Request) pageData {
+	data := pageData{
+		Base:     "/" + s.token,
+		CSRF:     s.token,
+		Editable: s.settings != nil,
+		Message:  r.URL.Query().Get("msg"),
+		IsError:  r.URL.Query().Get("err") == "1",
+	}
+	if s.settings == nil {
+		return data
+	}
+
+	cfg := s.settings.Config()
+	urls := make([]string, 0, len(cfg.Relay))
+	for _, relay := range cfg.Relay {
+		urls = append(urls, relay.URL)
+	}
+	data.Relays = strings.Join(urls, "\n")
+	data.Token = maskToken(cfg.Token)
+	data.LocalPort = cfg.Local.Port
+	data.RoomCode = cfg.Room.Code
+	data.ProxyProtocol = cfg.Local.ProxyProtocol
+	return data
+}
+
+func maskToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	if len(token) <= 8 {
+		return strings.Repeat("•", len(token))
+	}
+	return token[:8] + "••••"
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.Execute(w, map[string]string{
-		"Base": "/" + s.token,
-	}); err != nil {
+	if err := s.tmpl.Execute(w, s.buildPage(r)); err != nil {
 		s.log.Warn("rendering the web interface failed", "error", err)
 	}
 }
@@ -133,4 +192,72 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	if err := json.NewEncoder(w).Encode(s.source.Status()); err != nil {
 		s.log.Warn("rendering the status failed", "error", err)
 	}
+}
+
+// handleSettings validates a submitted form, stores it and restarts the agent.
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings are read only", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirect(w, r, "提交的表单无法解析", true)
+		return
+	}
+	// The path token doubles as the CSRF token: another origin cannot know it.
+	if r.PostFormValue("csrf") != s.token {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	cfg := s.settings.Config()
+
+	relays := make([]config.Relay, 0, 4)
+	for _, line := range strings.Split(r.PostFormValue("relays"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		relays = append(relays, config.Relay{Name: fmt.Sprintf("relay-%d", len(relays)+1), URL: line})
+	}
+	cfg.Relay = relays
+
+	// An empty token field means "keep the current token".
+	if token := strings.TrimSpace(r.PostFormValue("token")); token != "" {
+		cfg.Token = token
+	}
+
+	port, err := strconv.Atoi(strings.TrimSpace(r.PostFormValue("local_port")))
+	if err != nil || port < 1 || port > 65535 {
+		s.redirect(w, r, "本地端口必须是 1 到 65535 之间的数字", true)
+		return
+	}
+	cfg.Local.Port = port
+	cfg.Local.ProxyProtocol = r.PostFormValue("proxy_protocol") != ""
+
+	roomCode := strings.TrimSpace(r.PostFormValue("room_code"))
+	if roomCode == "" {
+		roomCode = "auto"
+	}
+	cfg.Room.Code = roomCode
+
+	if err := s.settings.Apply(cfg); err != nil {
+		s.log.Warn("applying settings failed", "error", err)
+		s.redirect(w, r, err.Error(), true)
+		return
+	}
+	s.redirect(w, r, "设置已保存，正在用新配置重新连接", false)
+}
+
+func (s *Server) redirect(w http.ResponseWriter, r *http.Request, message string, isError bool) {
+	query := url.Values{}
+	query.Set("msg", message)
+	if isError {
+		query.Set("err", "1")
+	}
+	http.Redirect(w, r, "/"+s.token+"/?"+query.Encode(), http.StatusSeeOther)
 }

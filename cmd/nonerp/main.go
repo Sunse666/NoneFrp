@@ -15,11 +15,10 @@ import (
 	"syscall"
 
 	"github.com/Sunse666/NoneFrp/internal/auth"
-	"github.com/Sunse666/NoneFrp/internal/client"
 	"github.com/Sunse666/NoneFrp/internal/config"
 	"github.com/Sunse666/NoneFrp/internal/link"
-	"github.com/Sunse666/NoneFrp/internal/protocol"
 	"github.com/Sunse666/NoneFrp/internal/server"
+	"github.com/Sunse666/NoneFrp/internal/supervisor"
 	"github.com/Sunse666/NoneFrp/internal/ui"
 )
 
@@ -208,24 +207,17 @@ func runClient(args []string) error {
 		return err
 	}
 
-	dataDir := filepath.Dir(*configPath)
 	logger := newLogger(*debug)
-	agent, err := client.New(cfg, dataDir, logger)
-	if err != nil {
-		return err
-	}
-	agent.OnRegistered = func(r protocol.Registered) {
-		fmt.Printf("room ready: %s:%d\n", r.PublicHost, r.PublicPort)
-	}
-	agent.OnRelayGone = func(relayURL string, err error) {
-		logger.Warn("control connection lost", "relay", relayURL, "error", err)
-	}
+	runner := supervisor.New(*configPath, filepath.Dir(*configPath), cfg, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	runner.Start(ctx)
+	defer runner.Stop()
+
 	if cfg.UI.Enabled {
-		webUI, err := ui.New(agent, "", logger)
+		webUI, err := ui.New(runner, runner, "", logger)
 		if err != nil {
 			return err
 		}
@@ -241,7 +233,8 @@ func runClient(args []string) error {
 		}
 	}
 
-	return agent.Run(ctx)
+	<-ctx.Done()
+	return nil
 }
 
 func newLogger(debug bool) *slog.Logger {
