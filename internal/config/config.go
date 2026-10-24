@@ -52,11 +52,11 @@ type Server struct {
 	PublicPort int    `yaml:"public_port"`
 	// PublicURL is the websocket address agents connect to, used to build join
 	// links. It is normally the reverse proxy endpoint, e.g. wss://relay.example.com.
-	PublicURL    string            `yaml:"public_url"`
-	DomainSuffix string            `yaml:"domain_suffix"`
-	GracePeriod  Duration          `yaml:"grace_period"`
-	Limits       Limits            `yaml:"limits"`
-	Tokens       map[string]string `yaml:"tokens"`
+	PublicURL    string           `yaml:"public_url"`
+	DomainSuffix string           `yaml:"domain_suffix"`
+	GracePeriod  Duration         `yaml:"grace_period"`
+	Limits       Limits           `yaml:"limits"`
+	Tokens       map[string]Token `yaml:"tokens"`
 }
 
 // Relay is one relay endpoint the agent may connect to.
@@ -107,7 +107,7 @@ func DefaultServer() Server {
 			MaxStreamsPerRoom: 64,
 			ConnRatePerIP:     20,
 		},
-		Tokens: map[string]string{},
+		Tokens: map[string]Token{},
 	}
 }
 

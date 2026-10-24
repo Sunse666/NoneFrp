@@ -38,10 +38,10 @@ tokens:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.Tokens["NFRP-BBBB3333"] != "second host" {
+	if cfg.Tokens["NFRP-BBBB3333"].Note != "second host" {
 		t.Fatalf("tokens = %v", cfg.Tokens)
 	}
-	if cfg.Tokens["NFRP-AAAA2222"] != "first host" {
+	if cfg.Tokens["NFRP-AAAA2222"].Note != "first host" {
 		t.Fatalf("existing token was lost: %v", cfg.Tokens)
 	}
 }
@@ -69,7 +69,7 @@ tokens: {}
 	if err != nil {
 		t.Fatalf("load after append: %v", err)
 	}
-	if cfg.Tokens["NFRP-EEEE6666"] != "first host" {
+	if cfg.Tokens["NFRP-EEEE6666"].Note != "first host" {
 		t.Fatalf("tokens = %v", cfg.Tokens)
 	}
 

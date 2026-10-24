@@ -349,7 +349,7 @@ func TestPlayerReachesLocalServerEndToEnd(t *testing.T) {
 	relayCfg := config.DefaultServer()
 	relayCfg.DomainSuffix = "mc.example.com"
 	relayCfg.PublicPort = 0
-	relayCfg.Tokens = map[string]string{testToken: "test host"}
+	relayCfg.Tokens = map[string]config.Token{testToken: {Note: "test host"}}
 	relay := server.New(relayCfg, slog.New(slog.DiscardHandler))
 
 	relayCtx, stopRelay := context.WithCancel(context.Background())

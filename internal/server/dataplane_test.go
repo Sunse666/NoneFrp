@@ -32,7 +32,7 @@ func newDataTestServerWith(t *testing.T, mutate func(*config.Server)) (*Server, 
 	cfg.DomainSuffix = "mc.example.com"
 	cfg.PublicPort = 0
 	cfg.GracePeriod = config.Duration(30 * time.Second)
-	cfg.Tokens = map[string]string{testToken: "test host"}
+	cfg.Tokens = map[string]config.Token{testToken: {Note: "test host"}}
 	if mutate != nil {
 		mutate(&cfg)
 	}

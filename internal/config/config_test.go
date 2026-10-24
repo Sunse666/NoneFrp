@@ -52,7 +52,7 @@ tokens:
 	if cfg.GracePeriod.Std() != 90*time.Second {
 		t.Fatalf("grace_period = %v", cfg.GracePeriod.Std())
 	}
-	if cfg.Tokens["NFRP-AAAA"] != "first host" {
+	if cfg.Tokens["NFRP-AAAA"].Note != "first host" {
 		t.Fatalf("tokens = %v", cfg.Tokens)
 	}
 }

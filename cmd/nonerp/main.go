@@ -151,7 +151,11 @@ func runServerToken(args []string) error {
 		}
 		sort.Strings(codes)
 		for _, code := range codes {
-			fmt.Printf("%s\t%s\n", code, cfg.Tokens[code])
+			token := cfg.Tokens[code]
+			fmt.Printf("%s\t%s\n", code, token.Usage(0))
+			if token.Note != "" {
+				fmt.Printf("\t%s\n", token.Note)
+			}
 		}
 		return nil
 
@@ -206,7 +210,7 @@ func runServerLink(args []string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("# %s\n%s\n", cfg.Tokens[code], built)
+			fmt.Printf("# %s\n%s\n", cfg.Tokens[code].Note, built)
 		}
 		return nil
 	}

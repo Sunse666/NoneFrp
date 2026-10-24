@@ -82,7 +82,7 @@ func TestSaveServerDurationRoundTrip(t *testing.T) {
 	cfg := DefaultServer()
 	cfg.DomainSuffix = "mc.example.com"
 	cfg.GracePeriod = Duration(90 * time.Second)
-	cfg.Tokens = map[string]string{"NFRP-7K2M9QXP": "a host"}
+	cfg.Tokens = map[string]Token{"NFRP-7K2M9QXP": {Note: "a host"}}
 
 	if err := SaveServer(path, cfg); err != nil {
 		t.Fatalf("save: %v", err)
@@ -94,7 +94,7 @@ func TestSaveServerDurationRoundTrip(t *testing.T) {
 	if got.GracePeriod.Std() != 90*time.Second {
 		t.Fatalf("grace = %v", got.GracePeriod.Std())
 	}
-	if got.Tokens["NFRP-7K2M9QXP"] != "a host" {
+	if got.Tokens["NFRP-7K2M9QXP"].Note != "a host" {
 		t.Fatalf("tokens = %v", got.Tokens)
 	}
 }

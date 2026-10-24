@@ -20,7 +20,7 @@ func startRelay(t *testing.T) *httptest.Server {
 	cfg := config.DefaultServer()
 	cfg.DomainSuffix = "mc.example.com"
 	cfg.GracePeriod = config.Duration(30 * time.Second)
-	cfg.Tokens = map[string]string{testToken: "test host"}
+	cfg.Tokens = map[string]config.Token{testToken: {Note: "test host"}}
 
 	relay := server.New(cfg, slog.New(slog.DiscardHandler))
 	ts := httptest.NewServer(relay.Handler())

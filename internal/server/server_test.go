@@ -22,7 +22,7 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	cfg := config.DefaultServer()
 	cfg.DomainSuffix = "mc.example.com"
 	cfg.GracePeriod = config.Duration(30 * time.Second)
-	cfg.Tokens = map[string]string{testToken: "test host"}
+	cfg.Tokens = map[string]config.Token{testToken: {Note: "test host"}}
 	srv := New(cfg, slog.New(slog.DiscardHandler))
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
