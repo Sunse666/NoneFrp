@@ -1,23 +1,20 @@
 # NoneFrp
 
-让开在家里 Windows 电脑上的 Minecraft 服务器，被外网的朋友直接连进来。
+让开在家里 Windows 电脑上的 Minecraft 服务器，被外部的设备直连进来。
 
-房主双击一个 exe，在网页里填两样东西；朋友在多人游戏里填一个地址。不需要公网 IP，不需要改路由器，不需要装 Java 以外的任何运行环境。
 
 ```
-玩家 ──TCP──▶ 中继服务器（Linux, 公网 IP）  ◀──WSS 出站── 房主（Windows, NAT 后面）
+玩家 ──TCP──▶ 中继服务器（Linux, 公网 IP）  ◀──WSS 出站── 房主
                     │                                        │
                     └─ 按 MC 握手里的域名分流 ───────────────┴──▶ 127.0.0.1:25565
 ```
-
-房主主动连出去，中继从不主动连房主，所以房主在哪都能用：家里宽带、校园网、公司网、手机热点。
 
 ---
 
 ## 目录
 
-- [它做什么](#它做什么)
-- [五分钟跑通](#五分钟跑通)
+- [功能](#功能)
+- [启动](#启动)
 - [部署中继服务器](#部署中继服务器)
 - [房主端](#房主端)
 - [邀请码](#邀请码)
@@ -29,26 +26,32 @@
 
 ---
 
-## 它做什么
+## 功能
 
 | 能力 | 说明 |
 |---|---|
 | 单端口多房间 | 中继只监听 25565，按 MC 握手包里的域名把玩家分到不同房间，不用开一堆端口 |
-| 房间码即域名 | 玩家地址形如 `a2b3c4.mc.example.com`，比 IP:端口 好记也好发 |
-| 邀请制 | 一次性邀请码（一台设备）或永久码；用掉多少台设备都记录在案 |
+| 房间码 | 玩家地址形如 `a2b3c4.mc.example.com` |
+| 邀请码 | 一次性邀请码或永久码 |
 | 直连分流 | 界面会列出局域网地址和公网 IPv6 地址，能直连就不走中继，延迟更低、不耗流量 |
-| 房主零配置 | exe 双击 → 网页里粘贴邀请码 → 完成。配置存在 exe 旁边，换机器拷走即可 |
-| 可诊断 | 网页显示连接状态、在线人数、流量、**本地服务器是否在监听**；日志同时写文件 |
+| 房主零配置 | 启动.exe → 网页里粘贴邀请码 → 保存 |
+| 可诊断 | 网页显示连接状态、在线人数、流量、**本地服务器是否在监听**；实时日志 |
 
 不支持：基岩版（UDP 19132）、语音模组等 UDP 服务、1.6 及更早的客户端。
 
-## 五分钟跑通
+## 启动
 
-**服务器（一次性）**
+**服务器**
 
 ```powershell
-scp -r .\dist\nonerp-bundle root@<服务器IP>:/root/nonerp
-ssh root@<服务器IP> 'bash /root/nonerp/setup.sh'
+scp -r .\dist\nonefrp-bundle root@<服务器IP>:/root/nonefrp
+ssh root@<服务器IP> 'bash /root/nonefrp/setup.sh'
+```
+
+或是手动上传后执行
+
+```bash
+bash /root/nonefrp/setup.sh
 ```
 
 菜单里按 **0** 跑完 1-8 步，再按 **9** 生成第一个邀请码。
@@ -72,14 +75,14 @@ ssh root@<服务器IP> 'bash /root/nonerp/setup.sh'
 
 ## 部署中继服务器
 
-### 需要什么
+### 设备需求
 
-- 一台有**公网 IPv4** 的 Linux（Ubuntu 22.04 / Debian 12 都行），1 核 1G 就够
+- 一台有**公网 IPv4** 的 Linux（Ubuntu 22.04 / Debian 12 等）,1H1G
 - 一个域名，两条 A 记录：
 
   | 记录 | 指向 | 说明 |
   |---|---|---|
-  | `relay.example.com` | 服务器 IP | 房主连的控制面（走 TLS） |
+  | `relay.example.com` | 服务器 IP | 房主连的控制面（TLS） |
   | `*.mc.example.com` | 服务器 IP | 玩家入口，**必须 DNS only，不能挂 CDN** |
 
 - 端口放行：**80、443、25565**（云厂商安全组 + 系统防火墙都要）
@@ -89,9 +92,16 @@ ssh root@<服务器IP> 'bash /root/nonerp/setup.sh'
 ### 一键安装
 
 ```bash
-scp -r nonerp-bundle root@<服务器IP>:/root/nonerp
+scp -r nonefrp-bundle root@<服务器IP>:/root/nonefrp
 ssh root@<服务器IP>
-bash /root/nonerp/setup.sh
+bash /root/nonefrp/setup.sh
+```
+
+或者上传文件后
+
+```bash
+bash /root/nonefrp/setup.sh
+
 ```
 
 脚本会渲染一个菜单，每一步自己检测当前状态：
@@ -124,13 +134,13 @@ bash setup.sh --domain mc.example.com --auto
 
 可选参数：`--relay=`、`--email=`、`--port=`、`--prefix=`、`--force`、`--no-tls`。
 
-### 手工安装（想自己控制每一步）
+### 手动安装
 
 ```bash
-install -d /opt/nonerp
-install -m 0755 nonerp-linux-amd64 /opt/nonerp/nonerp
+install -d /opt/nonefrp
+install -m 0755 nonefrp-linux-amd64 /opt/nonefrp/nonefrp
 
-cat > /opt/nonerp/server.yaml <<'YAML'
+cat > /opt/nonefrp/server.yaml <<'YAML'
 listen: "127.0.0.1:8080"          # 只给反代用，不直接对外
 public_port: 25565                # 玩家连这个
 domain_suffix: "mc.example.com"   # 玩家地址 = <房间码>.mc.example.com
@@ -138,10 +148,10 @@ public_url: "wss://relay.example.com"
 grace_period: 60s
 tokens: {}
 YAML
-chmod 600 /opt/nonerp/server.yaml
+chmod 600 /opt/nonefrp/server.yaml
 
-# 服务：内容见 deploy/nonerp.service
-systemctl daemon-reload && systemctl enable --now nonerp
+# 服务：内容见 deploy/nonefrp.service
+systemctl daemon-reload && systemctl enable --now nonefrp
 
 # nginx：内容见 deploy/nginx-relay.conf，注意 Upgrade / Connection 两行
 certbot --nginx -d relay.example.com
@@ -170,19 +180,19 @@ ufw allow 25565/tcp
 
 把 `NoneFrp-windows-amd64.exe` 发给房主，双击。浏览器会打开一个本地页面，填中继地址和邀请码即可。
 
-配置写在 **exe 同目录**的 `client.yaml`，日志写在同目录的 `nonerp.log`（10 MB 轮转，保留 3 份）。
+配置写在 **exe 同目录**的 `client.yaml`，日志写在同目录的 `nonefrp.log`。
 
 命令行等价写法：
 
 ```powershell
-.\NoneFrp-windows-amd64.exe client -join "nonerp://join?relay=...&token=..."
+.\NoneFrp-windows-amd64.exe client -join "nonefrp://join?relay=...&token=..."
 ```
 
 `-join` 连配置文件都不需要预先存在。
 
-### 之后每次
+### 再次
 
-双击 exe 就够了。
+双击启动 exe
 
 ### 配置文件字段
 
@@ -195,24 +205,24 @@ local:
   allow_lan: false
   proxy_protocol: false  # 开启后本地服务端能看到真实玩家 IP
 room:
-  code: auto             # auto = 由中继分配；也可以钉死一个
+  code: auto             # auto = 由中继分配
 token: JOIN-XXXXXXXX
 ui:
   enabled: true
   open_browser: true
 ```
 
-命令行参数（都可选）：`-config`、`-relay`、`-token`、`-join`、`-debug`、`-check`。
+命令行参数：`-config`、`-relay`、`-token`、`-join`、`-debug`、`-check`。
 
 ### 界面
 
-- **房间地址**：发给玩家的东西，带复制按钮
+- **房间地址**：发给玩家的地址
 - **在线玩家 / 上行 / 下行**：实时刷新
 - **本地服务器**：每 5 秒探测一次本地端口。显示「未监听」说明 Minecraft 服务端没开或端口不一致，页面会直接给出红色警告
 - **直连地址**：局域网 IPv4、公网 IPv6，能直连的人可以绕过中继
 - **设置**：改中继地址、邀请码、端口、房间码，保存后自动重连
 
-界面只监听 `127.0.0.1`，路径里带随机串，并校验 `Host` 头，所以外网访问不到，别的网页也改不动它。
+界面只监听 `127.0.0.1`，路径里带随机串，并校验 `Host` 头，所以外网访问不到
 
 ---
 
@@ -221,24 +231,24 @@ ui:
 在服务器上签发：
 
 ```bash
-cd /opt/nonerp
+cd /opt/nonefrp
 
-./nonerp server invite --once --note "小明"      # 一台设备
-./nonerp server invite --devices 5 --days 30     # 五台设备，30 天
-./nonerp server invite --note "老张"             # 永久、不限设备
-systemctl restart nonerp                         # 新码要重启才生效
+./nonefrp server invite --once --note frp1""      # 一台设备
+./nonefrp server invite --devices 5 --days 30     # 五台设备，30 天
+./nonefrp server invite --note "frp2"             # 永久、不限设备
+systemctl restart nonefrp                         # 新码要重启才生效
 ```
 
 - 输出形如 `JOIN-3X8P2R9T`，把它和 `relay.example.com` 一起发给房主
 - 「一次性」指**一台设备**：同一台机器断线重连、重启电脑都不受影响
-- 用掉多少台设备记在 `/opt/nonerp/state.json`，重启不丢
+- 使用设备设备记录在 `/opt/nonefrp/state.json`
 
 查看：
 
 ```bash
-./nonerp server token ls -config server.yaml
-# JOIN-3X8P2R9T  1/1 devices, never expires        小明
-# NFRP-LEGACY22  unlimited devices, never expires   老张
+./nonefrp server token ls -config server.yaml
+# JOIN-3X8P2R9T  1/1 devices, never expires
+# NFRP-LEGACY22  unlimited devices, never expires
 ```
 
 撤销：删掉 `server.yaml` 里对应的那一行，重启服务。
@@ -248,7 +258,7 @@ systemctl restart nonerp                         # 新码要重启才生效
 想让某个房主的地址固定下来：
 
 ```bash
-./nonerp server link -config server.yaml -token JOIN-3X8P2R9T --room mcxiao
+./nonefrp server link -config server.yaml -token JOIN-3X8P2R9T --room mcxiao
 ```
 
 然后让他在界面「房间码」里填 `mcxiao`，地址就永远是 `mcxiao.mc.example.com`。
@@ -257,7 +267,7 @@ systemctl restart nonerp                         # 新码要重启才生效
 
 ## 玩家地址与直连
 
-玩家填：`<房间码>.mc.example.com:25565`，端口不能省。
+玩家填：`<房间码>.mc.example.com:25565`
 
 同一局域网、或双方都有公网 IPv6 时，可以用界面上的**直连地址**，不经过中继：
 
@@ -273,29 +283,28 @@ systemctl restart nonerp                         # 新码要重启才生效
 ## 日常运维
 
 ```bash
-systemctl status nonerp           # 状态
-systemctl restart nonerp          # 改完配置
-journalctl -u nonerp -f           # 实时日志
+systemctl status nonefrp           # 状态
+systemctl restart nonefrp          # 改完配置
+journalctl -u nonefrp -f           # 实时日志
 curl -s https://relay.example.com/readyz    # 健康检查，期望 ready
 ```
 
 健康检查命令行工具：
 
 ```bash
-./nonerp server -config server.yaml -check    # 只校验配置，不启动
+./nonefrp server -config server.yaml -check
 ```
 
 升级：
 
 ```bash
-# 传新二进制，验证后替换
-install -m 0755 nonerp.new /opt/nonerp/nonerp
-systemctl restart nonerp
+install -m 0755 nonefrp.new /opt/nonefrp/nonefrp
+systemctl restart nonefrp
 ```
 
 房主端不需要跟着升级：协议向后兼容，中继可随时重启，房主端会自动重连。
 
-每月建议看一眼：`df -h /`、`certbot certificates`、云厂商的流量用量（MC 是持续流量）。
+每月建议看一眼：`df -h /`、`certbot certificates`、云厂商的流量用量。
 
 ---
 
@@ -310,11 +319,11 @@ systemctl restart nonerp
 | 房主界面未连接 + 401 | 邀请码不存在或已被撤销 |
 | 房主界面未连接 + 连接超时 | 中继地址写错、中继没跑、或 443 没放行 |
 | 房主一直 `relay attempt failed` | nginx 少了两行 `Upgrade` / `Connection` |
-| `https://relay.../readyz` 返回 502 | 中继没起来，`systemctl status nonerp`；多半是 `server.yaml` 写坏了 |
+| `https://relay.../readyz` 返回 502 | 中继没起来，`systemctl status nonefrp`；多半是 `server.yaml` 写坏了 |
 | 玩家能连但一直卡登录 | 服务器列表能刷新说明隧道通，问题在 Paper 侧 |
 | 「一次性邀请码用过了」 | 换了机器或删了 `device_id`；把该码的 `max_devices` 改成 2 救急 |
 
-服务器日志在 `journalctl`，房主日志在 exe 旁边的 `nonerp.log`。加 `-debug` 能看到每条流的字节数和每个拒绝原因。
+服务器日志在 `journalctl`，房主日志在 exe 旁边的 `nonefrp.log`。加 `-debug` 能看到每条流的字节数和每个拒绝原因。
 
 ---
 
@@ -331,10 +340,10 @@ systemctl restart nonerp
 | 文件 | 用途 |
 |---|---|
 | `dist/NoneFrp-windows-amd64.exe` | 房主端 |
-| `dist/nonerp-linux-amd64` | 中继（amd64） |
-| `dist/nonerp-linux-arm64` | 中继（树莓派等） |
-| `dist/nonerp-darwin-arm64` | 房主端（Mac） |
-| `dist/nonerp-bundle/` | 上传到服务器的完整包（二进制 + 脚本 + 文档） |
+| `dist/nonefrp-linux-amd64` | 中继（amd64） |
+| `dist/nonefrp-linux-arm64` | 中继（树莓派等） |
+| `dist/nonefrp-darwin-arm64` | 房主端（Mac） |
+| `dist/nonefrp-bundle/` | 上传到服务器的完整包（二进制文件 + 脚本 + 文档） |
 
 测试：
 
@@ -345,7 +354,7 @@ gofmt -l . && go vet ./... && go test ./...
 ## 项目结构
 
 ```
-cmd/nonerp/          单入口：server / client / server token|link|invite
+cmd/nonefrp/          单入口：server / client / server token|link|invite
 internal/
   protocol/          控制面消息、流 preface
   room/              房间状态机（active / grace / closed）

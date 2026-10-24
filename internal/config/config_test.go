@@ -80,8 +80,8 @@ func TestLoadClientAppliesDefaultsAndEnvOverrides(t *testing.T) {
     url: wss://from-file.example.com
 token: from-file
 `)
-	t.Setenv("NONERP_TOKEN", "from-env")
-	t.Setenv("NONERP_LOCAL_PORT", "25570")
+	t.Setenv("NONEFRP_TOKEN", "from-env")
+	t.Setenv("NONEFRP_LOCAL_PORT", "25570")
 
 	cfg, err := LoadClient(path)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestLoadClientRelayEnvOverride(t *testing.T) {
     url: wss://from-file.example.com
 token: t
 `)
-	t.Setenv("NONERP_RELAY", "wss://a.example.com, wss://b.example.com")
+	t.Setenv("NONEFRP_RELAY", "wss://a.example.com, wss://b.example.com")
 
 	cfg, err := LoadClient(path)
 	if err != nil {

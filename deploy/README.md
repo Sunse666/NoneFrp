@@ -6,7 +6,7 @@ address; nothing else is required on the machine.
 ## Install
 
 ```powershell
-scp dist/nonerp-linux-amd64 deploy/setup.sh root@relay:/root/
+scp dist/nonefrp-linux-amd64 deploy/setup.sh root@relay:/root/
 ssh root@relay 'bash /root/setup.sh'
 ```
 
@@ -79,15 +79,15 @@ firewall state and the public addresses. Two things to watch for:
 1. **Install the binary**
 
    ```bash
-   scp dist/nonerp-linux-amd64 root@relay:/tmp/nonerp
-   ssh root@relay 'install -d /opt/nonerp && install -m 0755 /tmp/nonerp /opt/nonerp/nonerp'
+   scp dist/nonefrp-linux-amd64 root@relay:/tmp/nonefrp
+   ssh root@relay 'install -d /opt/nonefrp && install -m 0755 /tmp/nonefrp /opt/nonefrp/nonefrp'
    ```
 
 2. **Write the configuration**
 
    ```bash
-   scp configs/server.example.yaml root@relay:/opt/nonerp/server.yaml
-   ssh root@relay 'nano /opt/nonerp/server.yaml'
+   scp configs/server.example.yaml root@relay:/opt/nonefrp/server.yaml
+   ssh root@relay 'nano /opt/nonefrp/server.yaml'
    ```
 
    Fill in `domain_suffix` (the name players will type) and `public_url` (the
@@ -97,9 +97,9 @@ firewall state and the public addresses. Two things to watch for:
 3. **Install the service**
 
    ```bash
-   scp deploy/nonerp.service root@relay:/etc/systemd/system/
-   ssh root@relay 'systemctl daemon-reload && systemctl enable --now nonerp'
-   ssh root@relay 'journalctl -u nonerp -n 20 --no-pager'
+   scp deploy/nonefrp.service root@relay:/etc/systemd/system/
+   ssh root@relay 'systemctl daemon-reload && systemctl enable --now nonefrp'
+   ssh root@relay 'journalctl -u nonefrp -n 20 --no-pager'
    ```
 
 4. **Put Caddy in front of it**
@@ -129,11 +129,11 @@ firewall state and the public addresses. Two things to watch for:
 6. **Issue a token and hand it out**
 
    ```bash
-   ssh root@relay '/opt/nonerp/nonerp server token new -config /opt/nonerp/server.yaml -note "whoever"'
-   ssh root@relay '/opt/nonerp/nonerp server link -config /opt/nonerp/server.yaml -token NFRP-XXXXXXXX'
+   ssh root@relay '/opt/nonefrp/nonefrp server token new -config /opt/nonefrp/server.yaml -note "whoever"'
+   ssh root@relay '/opt/nonefrp/nonefrp server link -config /opt/nonefrp/server.yaml -token NFRP-XXXXXXXX'
    ```
 
-   The second command prints a `nonerp://join?...` link to send to the host.
+   The second command prints a `nonefrp://join?...` link to send to the host.
 
 7. **Check it**
 
@@ -145,8 +145,8 @@ firewall state and the public addresses. Two things to watch for:
 ## Upgrading
 
 ```bash
-scp dist/nonerp-linux-amd64 root@relay:/opt/nonerp/nonerp.new
-ssh root@relay 'install -m 0755 /opt/nonerp/nonerp.new /opt/nonerp/nonerp && systemctl restart nonerp'
+scp dist/nonefrp-linux-amd64 root@relay:/opt/nonefrp/nonefrp.new
+ssh root@relay 'install -m 0755 /opt/nonefrp/nonefrp.new /opt/nonefrp/nonefrp && systemctl restart nonefrp'
 ```
 
 Agents reconnect on their own within seconds; players see a brief "room

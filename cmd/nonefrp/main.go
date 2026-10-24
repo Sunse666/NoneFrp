@@ -1,4 +1,4 @@
-// Command nonerp is the single binary used both as the relay server and as
+// Command nonefrp is the single binary used both as the relay server and as
 // the host-side agent.
 package main
 
@@ -39,7 +39,7 @@ func main() {
 		if errors.Is(err, errUsage) {
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stderr, "nonerp: %v\n", err)
+		fmt.Fprintf(os.Stderr, "nonefrp: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -53,7 +53,7 @@ func run(args []string) error {
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "version", "-v", "--version":
-		fmt.Printf("nonerp %s (built %s)\n", version, buildTime)
+		fmt.Printf("nonefrp %s (built %s)\n", version, buildTime)
 		return nil
 	case "help", "-h", "--help":
 		printUsage()
@@ -112,7 +112,7 @@ func runServer(args []string) error {
 
 func runServerToken(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: nonerp server token <new|ls>")
+		return fmt.Errorf("usage: nonefrp server token <new|ls>")
 	}
 	switch args[0] {
 	case "new":
@@ -206,7 +206,7 @@ func runServerLink(args []string) error {
 		}
 		sort.Strings(codes)
 		if len(codes) == 0 {
-			return fmt.Errorf("no tokens issued yet: run nonerp server token new")
+			return fmt.Errorf("no tokens issued yet: run nonefrp server token new")
 		}
 		for _, code := range codes {
 			built, err := link.JoinLink(target, code, *room)
@@ -272,7 +272,7 @@ func runClient(args []string) error {
 	relay := fs.String("relay", "", "override the relay url for this run")
 	token := fs.String("token", "", "override the access token for this run")
 	debug := fs.Bool("debug", false, "log every forwarded stream")
-	join := fs.String("join", "", "import a nonerp://join link and save it")
+	join := fs.String("join", "", "import a nonefrp://join link and save it")
 	check := fs.Bool("check", false, "validate the configuration and exit")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
@@ -298,7 +298,7 @@ func runClient(args []string) error {
 		cfg.Token = *token
 	}
 
-	logger, closeLog := logging.New(*debug, filepath.Join(filepath.Dir(*configPath), "nonerp.log"))
+	logger, closeLog := logging.New(*debug, filepath.Join(filepath.Dir(*configPath), "nonefrp.log"))
 	defer closeLog()
 
 	if *join != "" {
@@ -394,11 +394,11 @@ func newLogger(debug bool) *slog.Logger {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, `nonerp - reverse tunnel for Minecraft servers
+	fmt.Fprint(os.Stderr, `nonefrp - reverse tunnel for Minecraft servers
 
 Usage:
-  nonerp                 run the host agent (same as "nonerp client")
-  nonerp <command> [flags]
+  nonefrp                 run the host agent (same as "nonefrp client")
+  nonefrp <command> [flags]
 
 Commands:
   server              run the relay server
@@ -410,6 +410,6 @@ Commands:
   version             print version information
   help                print this message
 
-Run "nonerp <command> -h" for command specific flags.
+Run "nonefrp <command> -h" for command specific flags.
 `)
 }

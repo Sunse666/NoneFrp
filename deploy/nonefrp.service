@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/nonerp
-ExecStart=/opt/nonerp/nonerp server -config /opt/nonerp/server.yaml
+WorkingDirectory=/opt/nonefrp
+ExecStart=/opt/nonefrp/nonefrp server -config /opt/nonefrp/server.yaml
 Restart=always
 RestartSec=2
 # Every player connection is one file descriptor on the relay.

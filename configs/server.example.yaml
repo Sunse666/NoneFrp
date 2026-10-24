@@ -13,7 +13,7 @@ public_port: 25565
 # Rooms are addressed as <room>.domain_suffix, e.g. a1b2.mc.example.com
 domain_suffix: "mc.example.com"
 
-# Public websocket address agents connect to. Used by "nonerp server link" to
+# Public websocket address agents connect to. Used by "nonefrp server link" to
 # build shareable join links.
 public_url: "wss://relay.example.com"
 
@@ -25,6 +25,6 @@ limits:
   max_streams_per_room: 64
   conn_rate_per_ip: 20
 
-# Access tokens handed out with "nonerp server token new".
+# Access tokens handed out with "nonefrp server token new".
 tokens:
   # NFRP-7K2M: "example host"

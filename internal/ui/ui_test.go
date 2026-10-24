@@ -188,7 +188,7 @@ func TestSaveJoinLinkOverridesFields(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("csrf", "testtoken")
-	form.Set("join", "nonerp://join?relay=wss%3A%2F%2Frelay2.example.com&room=b7k2m9&token=NFRP-NEWTOKEN")
+	form.Set("join", "nonefrp://join?relay=wss%3A%2F%2Frelay2.example.com&room=b7k2m9&token=NFRP-NEWTOKEN")
 	form.Set("relay", "")
 	form.Set("token", "")
 	form.Set("local_port", "25565")

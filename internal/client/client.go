@@ -55,7 +55,7 @@ func New(cfg config.Client, dataDir string, logger *slog.Logger) (*Client, error
 		if err != nil {
 			return nil, fmt.Errorf("resolve config directory: %w", err)
 		}
-		dataDir = filepath.Join(dir, "nonerp")
+		dataDir = filepath.Join(dir, "nonefrp")
 	}
 	deviceID, err := loadOrCreateDeviceID(dataDir)
 	if err != nil {

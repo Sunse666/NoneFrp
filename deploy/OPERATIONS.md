@@ -20,11 +20,11 @@
 
 ```bash
 # 1. 二进制
-mkdir -p /opt/nonerp
-install -m 0755 /tmp/nonerp /opt/nonerp/nonerp
+mkdir -p /opt/nonefrp
+install -m 0755 /tmp/nonefrp /opt/nonefrp/nonefrp
 
 # 2. 配置
-cat > /opt/nonerp/server.yaml <<'EOF'
+cat > /opt/nonefrp/server.yaml <<'EOF'
 listen: "127.0.0.1:8080"
 public_port: 25565
 domain_suffix: "mc.example.com"
@@ -33,8 +33,8 @@ grace_period: 60s
 tokens: {}
 EOF
 
-# 3. systemd 单元（内容见 deploy/nonerp.service）
-systemctl daemon-reload && systemctl enable --now nonerp
+# 3. systemd 单元（内容见 deploy/nonefrp.service）
+systemctl daemon-reload && systemctl enable --now nonefrp
 
 # 4. nginx 反代（内容见 deploy/nginx-relay.conf，注意 Upgrade 两行）
 #    宝塔面板则在面板里加站点 + 反向代理
@@ -54,22 +54,22 @@ DNS 需要两条 A 记录，都指向 <server-ip>：
 ## 日常操作
 
 ```bash
-systemctl status nonerp          # 看状态
-systemctl restart nonerp         # 改完配置后重启
-journalctl -u nonerp -f          # 实时日志（看谁连进来、谁掉线）
+systemctl status nonefrp          # 看状态
+systemctl restart nonefrp         # 改完配置后重启
+journalctl -u nonefrp -f          # 实时日志（看谁连进来、谁掉线）
 curl -s https://relay.example.com/readyz   # 健康检查，期望 ready
 ```
 
-改配置的固定流程：**改 `/opt/nonerp/server.yaml` → `systemctl restart nonerp` → `curl readyz`**。
+改配置的固定流程：**改 `/opt/nonefrp/server.yaml` → `systemctl restart nonefrp` → `curl readyz`**。
 
 ## 签发邀请码（给一个新朋友）
 
 ```bash
-cd /opt/nonerp
-./nonerp server invite --once --note "小明"        # 只允许一台设备
+cd /opt/nonefrp
+./nonefrp server invite --once --note "小明"        # 只允许一台设备
 #  invite:  JOIN-3X8P2R9T
 #  policy:  0/1 devices, never expires
-systemctl restart nonerp
+systemctl restart nonefrp
 ```
 
 房主在界面里填两个东西：中继地址（`relay.example.com`）+ 邀请码（`JOIN-3X8P2R9T`），点「测试连接」确认，再点「保存并重连」。
@@ -81,39 +81,39 @@ systemctl restart nonerp
 查看谁用掉了哪个码：
 
 ```bash
-./nonerp server token ls -config server.yaml
+./nonefrp server token ls -config server.yaml
 # JOIN-3X8P2R9T  1/1 devices, never expires        小明
 # NFRP-LEGACY22  unlimited devices, never expires   老张
 ```
 
-用掉记录在 `/opt/nonerp/state.json`，重启不丢。
+用掉记录在 `/opt/nonefrp/state.json`，重启不丢。
 
 ## 签发新 token（给一个新房主）
 
 ```bash
-cd /opt/nonerp
-./nonerp server token new -config server.yaml -note "谁在用"
-systemctl restart nonerp            # token 是启动时读的，必须重启
-./nonerp server link -config server.yaml -token NFRP-XXXXXXXX
+cd /opt/nonefrp
+./nonefrp server token new -config server.yaml -note "谁在用"
+systemctl restart nonefrp            # token 是启动时读的，必须重启
+./nonefrp server link -config server.yaml -token NFRP-XXXXXXXX
 ```
 
-第二条命令打印的 `nonerp://join?...` 链接就是要发给房主的东西。
+第二条命令打印的 `nonefrp://join?...` 链接就是要发给房主的东西。
 
 **一次给多个房主**（一人一个 token，各发一条链接）：
 
 ```bash
-cd /opt/nonerp
-./nonerp server token new -config server.yaml -note "小明"
-./nonerp server token new -config server.yaml -note "小红"
-systemctl restart nonerp                 # 一次性重启，不用每签一个就重启
-./nonerp server link -config server.yaml -all
+cd /opt/nonefrp
+./nonefrp server token new -config server.yaml -note "小明"
+./nonefrp server token new -config server.yaml -note "小红"
+systemctl restart nonefrp                 # 一次性重启，不用每签一个就重启
+./nonefrp server link -config server.yaml -all
 ```
 
 `-all` 会按 note 排序，把每个 token 对应的链接都打出来。
 
-**看清谁在用**：`./nonerp server token ls -config server.yaml`
+**看清谁在用**：`./nonefrp server token ls -config server.yaml`
 
-**撤销一个 token**：把 `server.yaml` 里 `tokens:` 下面那一行删掉，然后 `systemctl restart nonerp`。
+**撤销一个 token**：把 `server.yaml` 里 `tokens:` 下面那一行删掉，然后 `systemctl restart nonefrp`。
 
 > 链接本身就是凭证：谁拿到谁就能在这台中继上开一个房间、占用带宽。但它**不能顶掉别人的房间**——房间码已经被别的设备占用时注册会被拒绝。
 
@@ -121,17 +121,17 @@ systemctl restart nonerp                 # 一次性重启，不用每签一个�
 
 ```powershell
 # Windows 上，仓库根目录
-scp .\dist\nonerp-linux-amd64 root@<server-ip>:/opt/nonerp/nonerp.new
+scp .\dist\nonefrp-linux-amd64 root@<server-ip>:/opt/nonefrp/nonefrp.new
 ```
 
 ```bash
 # 服务器上
-cd /opt/nonerp
-./nonerp.new version          # 确认版本号
-file nonerp.new               # 必须是 ELF x86-64
-install -m 0755 nonerp.new nonerp
-rm -f nonerp.new
-systemctl restart nonerp
+cd /opt/nonefrp
+./nonefrp.new version          # 确认版本号
+file nonefrp.new               # 必须是 ELF x86-64
+install -m 0755 nonefrp.new nonefrp
+rm -f nonefrp.new
+systemctl restart nonefrp
 curl -s https://relay.example.com/readyz
 ```
 
@@ -141,9 +141,9 @@ curl -s https://relay.example.com/readyz
 
 | 项 | 位置 |
 | --- | --- |
-| 二进制 | `/opt/nonerp/nonerp` |
-| 配置（含 token） | `/opt/nonerp/server.yaml` |
-| systemd 单元 | `/etc/systemd/system/nonerp.service` |
+| 二进制 | `/opt/nonefrp/nonefrp` |
+| 配置（含 token） | `/opt/nonefrp/server.yaml` |
+| systemd 单元 | `/etc/systemd/system/nonefrp.service` |
 | nginx 站点 | `/etc/nginx/conf.d/relay.conf` 或 `/etc/nginx/sites-available/relay.conf` |
 | 监听 | `127.0.0.1:8080`（内部）、`:25565`（玩家） |
 | 外部端口 | 80、443、25565 |
@@ -152,7 +152,7 @@ curl -s https://relay.example.com/readyz
 
 | 现象 | 原因 |
 | --- | --- |
-| `curl` 返回 **502** | 中继没跑：`systemctl status nonerp`，多半是 `server.yaml` 写坏了 |
+| `curl` 返回 **502** | 中继没跑：`systemctl status nonefrp`，多半是 `server.yaml` 写坏了 |
 | 服务反复重启，日志 `yaml: line N` | 配置缩进错。YAML 禁用 Tab，块状结构用两个空格 |
 | `bind: address already in use` | 已经有一个实例（通常是 systemd 那个）占着 25565，别再手动跑 |
 | 玩家提示**房间不存在** | 地址里的房间码和房主端当前房间码不一致 |
@@ -165,17 +165,17 @@ curl -s https://relay.example.com/readyz
 
 ## 首次配置
 
-最简单的路径：**双击 exe**。浏览器会自动打开，把管理员给的 `nonerp://join?...` 链接粘贴到「邀请链接」框，点「保存并重连」。配置写进 exe 同目录的 `client.yaml`，下次双击直接连。
+最简单的路径：**双击 exe**。浏览器会自动打开，把管理员给的 `nonefrp://join?...` 链接粘贴到「邀请链接」框，点「保存并重连」。配置写进 exe 同目录的 `client.yaml`，下次双击直接连。
 
 命令行方式（等价）：
 
 1. 拿到 exe：`dist\NoneFrp-windows-amd64.exe`
-2. 拿到中继管理员发的 `nonerp://join?...` 链接
+2. 拿到中继管理员发的 `nonefrp://join?...` 链接
 3. 在 PowerShell 里执行（**路径开头的 `.` 不能省**）：
 
 ```powershell
 cd D:\IO\Go_obj\NoneFrp
-.\dist\NoneFrp-windows-amd64.exe client -join "nonerp://join?relay=..."
+.\dist\NoneFrp-windows-amd64.exe client -join "nonefrp://join?relay=..."
 ```
 
 第一次运行会自动生成 `client.yaml`（和 exe 同目录）。之后就不用再带 `-join` 了：
@@ -235,7 +235,7 @@ schtasks /create /tn "NoneFrp" /tr ""D:\IO\Go_obj\NoneFrp\dist\NoneFrp-windows-a
 
 界面每 5 秒探测一次 `127.0.0.1:<本地端口>`，「本地服务器」那一行显示「未监听」时，页面会在地址下面直接给出警告——这条能挡掉大部分"玩家进不来"。
 
-日志同时写到 **exe 同目录的 `nonerp.log`**（10 MB 轮转，保留 3 份），关掉黑窗口也还在。需要看细节时加 `-debug`：
+日志同时写到 **exe 同目录的 `nonefrp.log`**（10 MB 轮转，保留 3 份），关掉黑窗口也还在。需要看细节时加 `-debug`：
 
 ```powershell
 .\dist\NoneFrp-windows-amd64.exe client -debug

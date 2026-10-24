@@ -2,7 +2,7 @@
 # 无人值守安装：等价于 setup.sh --auto。
 # 交互式菜单请直接运行 setup.sh。
 #
-#   scp nonerp-linux-amd64 setup.sh root@HOST:/root/
+#   scp nonefrp-linux-amd64 setup.sh root@HOST:/root/
 #   ssh root@HOST 'bash /root/setup.sh --domain mc.example.com'
 
 set -euo pipefail

@@ -10,7 +10,7 @@ func TestJoinLinkRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if !strings.HasPrefix(built, "nonerp://join?") {
+	if !strings.HasPrefix(built, "nonefrp://join?") {
 		t.Fatalf("link = %q", built)
 	}
 
@@ -69,10 +69,10 @@ func TestParseJoinRejectsForeignLinks(t *testing.T) {
 	cases := []string{
 		"",
 		"https://example.com",
-		"nonerp://other?relay=wss%3A%2F%2Fr.example.com&token=t",
-		"nonerp://join?token=t",
-		"nonerp://join?relay=wss%3A%2F%2Fr.example.com",
-		"nonerp://join?relay=http%3A%2F%2Fr.example.com&token=t",
+		"nonefrp://other?relay=wss%3A%2F%2Fr.example.com&token=t",
+		"nonefrp://join?token=t",
+		"nonefrp://join?relay=wss%3A%2F%2Fr.example.com",
+		"nonefrp://join?relay=http%3A%2F%2Fr.example.com&token=t",
 	}
 	for _, raw := range cases {
 		if _, err := ParseJoin(raw); err == nil {

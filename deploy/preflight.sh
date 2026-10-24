@@ -50,8 +50,8 @@ have firewall-cmd && firewall-cmd --state 2>/dev/null && firewall-cmd --list-por
 iptables -S 2>/dev/null | grep -c . | sed 's/^/iptables rules: /'
 
 section "existing relay?"
-ls -la /opt/nonerp 2>/dev/null || echo "no /opt/nonerp yet"
-systemctl is-active nonerp 2>/dev/null || true
+ls -la /opt/nonefrp 2>/dev/null || echo "no /opt/nonefrp yet"
+systemctl is-active nonefrp 2>/dev/null || true
 
 section "bandwidth hint"
 echo "check your plan's bandwidth: 8 Mbps carries roughly 10 minecraft players."

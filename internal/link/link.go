@@ -1,4 +1,4 @@
-// Package link builds and parses the nonerp://join URL that carries everything
+// Package link builds and parses the nonefrp://join URL that carries everything
 // a host needs to set up an agent: the relay address and an access token.
 package link
 
@@ -10,13 +10,13 @@ import (
 
 // Scheme and host of a join link.
 const (
-	Scheme = "nonerp"
+	Scheme = "nonefrp"
 	Host   = "join"
 )
 
 // JoinLink builds a link such as
 //
-//	nonerp://join?relay=wss%3A%2F%2Frelay.example.com&room=auto&token=NFRP-XXXX
+//	nonefrp://join?relay=wss%3A%2F%2Frelay.example.com&room=auto&token=NFRP-XXXX
 func JoinLink(relayURL, token, room string) (string, error) {
 	if err := validateRelay(relayURL); err != nil {
 		return "", err
@@ -47,7 +47,7 @@ type JoinRequest struct {
 	Room     string
 }
 
-// ParseJoin decodes a nonerp://join link.
+// ParseJoin decodes a nonefrp://join link.
 func ParseJoin(raw string) (JoinRequest, error) {
 	var out JoinRequest
 

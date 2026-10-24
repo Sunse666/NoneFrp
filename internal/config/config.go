@@ -1,6 +1,6 @@
 // Package config loads and validates the relay and agent configuration files.
 //
-// Precedence, lowest to highest: built-in defaults, YAML file, NONERP_*
+// Precedence, lowest to highest: built-in defaults, YAML file, NONEFRP_*
 // environment variables. Command line flags are applied by the caller.
 package config
 
@@ -159,10 +159,10 @@ func decodeFile(path string, out any) error {
 }
 
 func applyClientEnv(cfg *Client) {
-	if v := os.Getenv("NONERP_TOKEN"); v != "" {
+	if v := os.Getenv("NONEFRP_TOKEN"); v != "" {
 		cfg.Token = v
 	}
-	if v := os.Getenv("NONERP_RELAY"); v != "" {
+	if v := os.Getenv("NONEFRP_RELAY"); v != "" {
 		cfg.Relay = nil
 		for i, raw := range strings.Split(v, ",") {
 			raw = strings.TrimSpace(raw)
@@ -172,12 +172,12 @@ func applyClientEnv(cfg *Client) {
 			cfg.Relay = append(cfg.Relay, Relay{Name: fmt.Sprintf("env-%d", i+1), URL: raw})
 		}
 	}
-	if v := os.Getenv("NONERP_LOCAL_PORT"); v != "" {
+	if v := os.Getenv("NONEFRP_LOCAL_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
 			cfg.Local.Port = port
 		}
 	}
-	if v := os.Getenv("NONERP_ROOM_CODE"); v != "" {
+	if v := os.Getenv("NONEFRP_ROOM_CODE"); v != "" {
 		cfg.Room.Code = v
 	}
 }

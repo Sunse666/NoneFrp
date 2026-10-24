@@ -126,14 +126,14 @@ const indexHTML = `<!doctype html>
   <section class="card">
     <div class="label">设置</div>
     {{if not .Configured}}
-    <div class="flash err">还没有连上中继。把管理员给你的 <b>nonerp://join?...</b> 链接粘贴到第一个框，直接用下面的「保存并重连」即可；也可以手动填写中继地址和令牌。</div>
+    <div class="flash err">还没有连上中继。把管理员给你的 <b>nonefrp://join?...</b> 链接粘贴到第一个框，直接用下面的「保存并重连」即可；也可以手动填写中继地址和令牌。</div>
     {{end}}
     {{if .Message}}<div class="flash {{if .IsError}}err{{else}}ok{{end}}">{{.Message}}</div>{{end}}
     <form method="post" action="{{.Base}}/settings">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
       <div class="field">
         <span>邀请链接（可选，粘贴后自动填好下面各项）</span>
-        <input type="text" name="join" placeholder="nonerp://join?..." autocomplete="off" spellcheck="false">
+        <input type="text" name="join" placeholder="nonefrp://join?..." autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
         <span>中继地址</span>
@@ -141,7 +141,7 @@ const indexHTML = `<!doctype html>
                autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="field">
-        <span>邀请码（也接受整条 nonerp:// 链接；留空保持不变）</span>
+        <span>邀请码（也接受整条 nonefrp:// 链接；留空保持不变）</span>
         <input type="text" name="token" placeholder="{{.Token}}"
                autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>

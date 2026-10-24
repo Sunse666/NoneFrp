@@ -22,7 +22,7 @@ room:
   # "auto" lets the server assign a room code, or pin a code yourself.
   code: "auto"
 
-# Access token issued by "nonerp server token new".
+# Access token issued by "nonefrp server token new".
 token: ""
 
 ui:

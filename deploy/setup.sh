@@ -4,14 +4,14 @@
 #   bash setup.sh                     交互菜单
 #   bash setup.sh --domain mc.example.com             交互菜单（预填域名）
 #   bash setup.sh --domain mc.example.com --auto      无人值守，跑完即退
-#   bash setup.sh --prefix=/root/relay                把程序装在别处（默认 /opt/nonerp）
+#   bash setup.sh --prefix=/root/relay                把程序装在别处（默认 /opt/nonefrp）
 #
 # 每一步都可以单独重跑，也会自己判断当前状态；重复执行是安全的。
 
-PREFIX=/opt/nonerp
+PREFIX=/opt/nonefrp
 STATE=$PREFIX/.setup
-UNIT=/etc/systemd/system/nonerp.service
-NGINX_LOG=/tmp/nonerp-nginx-test.log
+UNIT=/etc/systemd/system/nonefrp.service
+NGINX_LOG=/tmp/nonefrp-nginx-test.log
 
 PORT=25565
 DOMAIN=""
@@ -87,6 +87,29 @@ load_state
 
 [ "$(id -u)" -eq 0 ] || { printf '需要 root 运行\n' >&2; exit 1; }
 
+# Older releases spelled the project "nonerp" in the directory, the binary and
+# the service name. Move them once so upgrading is not a manual chore.
+migrate_legacy() {
+  if [ "$PREFIX" != "/opt/nonefrp" ]; then return 0; fi
+
+  if [ -d /opt/nonerp ] && [ ! -d /opt/nonefrp ]; then
+    mv /opt/nonerp /opt/nonefrp
+    if [ -f /opt/nonefrp/nonerp ] && [ ! -f /opt/nonefrp/nonefrp ]; then
+      mv /opt/nonefrp/nonerp /opt/nonefrp/nonefrp
+    fi
+    printf '    ok   已把 /opt/nonerp 迁移到 /opt/nonefrp\n'
+  fi
+
+  if [ -f /etc/systemd/system/nonerp.service ]; then
+    systemctl disable --now nonerp >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/nonerp.service
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    printf '    ok   已停用旧服务名 nonerp\n'
+  fi
+}
+
+migrate_legacy
+
 if [ -z "$DOMAIN" ] && [ "$AUTO" -eq 1 ]; then
   printf '缺少 --domain\n' >&2; exit 2
 fi
@@ -104,7 +127,7 @@ fill_derived() {
 find_bin() {
   if [ -n "$BIN" ] && [ -f "$BIN" ]; then return; fi
   HERE="$(cd "$(dirname "$0")" && pwd)"
-  for candidate in "$HERE/nonerp-linux-amd64" "$HERE/nonerp" /tmp/nonerp /root/nonerp-linux-amd64; do
+  for candidate in "$HERE/nonefrp-linux-amd64" "$HERE/nonefrp" /tmp/nonefrp /root/nonefrp-linux-amd64; do
     if [ -f "$candidate" ]; then BIN="$candidate"; return; fi
   done
 }
@@ -123,19 +146,19 @@ check_env() {
 }
 
 check_binary() {
-  [ -x "$PREFIX/nonerp" ] || return 1
-  "$PREFIX/nonerp" version >/dev/null 2>&1
+  [ -x "$PREFIX/nonefrp" ] || return 1
+  "$PREFIX/nonefrp" version >/dev/null 2>&1
 }
 
 check_config() {
   [ -f "$PREFIX/server.yaml" ] || return 1
-  [ -x "$PREFIX/nonerp" ] || return 1
-  "$PREFIX/nonerp" server -config "$PREFIX/server.yaml" -check >/dev/null 2>&1
+  [ -x "$PREFIX/nonefrp" ] || return 1
+  "$PREFIX/nonefrp" server -config "$PREFIX/server.yaml" -check >/dev/null 2>&1
 }
 
 check_unit() {
   [ -f "$UNIT" ] || return 1
-  systemctl is-enabled nonerp >/dev/null 2>&1
+  systemctl is-enabled nonefrp >/dev/null 2>&1
 }
 
 check_nginx() {
@@ -172,12 +195,12 @@ step_env() {
   find_bin
   if [ -z "$BIN" ] || [ ! -f "$BIN" ]; then
     fail "找不到 Linux 二进制"
-    hint "把 nonerp-linux-amd64 和本脚本一起 scp 到 /root/，或用 --bin= 指定"
+    hint "把 nonefrp-linux-amd64 和本脚本一起 scp 到 /root/，或用 --bin= 指定"
     return 1
   fi
   if command -v file >/dev/null && ! file "$BIN" | grep -q ELF; then
     fail "$BIN 不是 Linux 可执行文件"
-    hint "你可能传成了 Windows 的 exe，改成 dist/nonerp-linux-amd64"
+    hint "你可能传成了 Windows 的 exe，改成 dist/nonefrp-linux-amd64"
     return 1
   fi
   [ -n "$DOMAIN" ] || { fail "还没设置域名"; hint "按 t 修改参数"; return 1; }
@@ -189,15 +212,15 @@ step_env() {
 
 step_binary() {
   install -d -m 0755 "$PREFIX"
-  install -m 0755 "$BIN" "$PREFIX/nonerp" || { fail "复制失败"; return 1; }
-  VERSION="$("$PREFIX/nonerp" version 2>&1)" || { fail "二进制跑不起来：$VERSION"; hint "重新传一次二进制"; return 1; }
+  install -m 0755 "$BIN" "$PREFIX/nonefrp" || { fail "复制失败"; return 1; }
+  VERSION="$("$PREFIX/nonefrp" version 2>&1)" || { fail "二进制跑不起来：$VERSION"; hint "重新传一次二进制"; return 1; }
   ok "$VERSION"
   return 0
 }
 
 step_config() {
   if [ -f "$PREFIX/server.yaml" ] && [ "$FORCE" -eq 0 ]; then
-    if "$PREFIX/nonerp" server -config "$PREFIX/server.yaml" -check >/dev/null 2>&1; then
+    if "$PREFIX/nonefrp" server -config "$PREFIX/server.yaml" -check >/dev/null 2>&1; then
       ok "已存在且有效，保留（含 token）。要重写加 --force"
       return 0
     fi
@@ -217,9 +240,9 @@ YAML
   sed -i "s/__PORT__/$PORT/; s/__DOMAIN__/$DOMAIN/; s/__RELAY__/$RELAY_HOST/" "$PREFIX/server.yaml"
   chmod 600 "$PREFIX/server.yaml"
 
-  if ! "$PREFIX/nonerp" server -config "$PREFIX/server.yaml" -check >/dev/null 2>&1; then
+  if ! "$PREFIX/nonefrp" server -config "$PREFIX/server.yaml" -check >/dev/null 2>&1; then
     fail "写出来的配置仍无法解析"
-    "$PREFIX/nonerp" server -config "$PREFIX/server.yaml" -check 2>&1 | sed 's/^/        /'
+    "$PREFIX/nonefrp" server -config "$PREFIX/server.yaml" -check 2>&1 | sed 's/^/        /'
     return 1
   fi
   ok "已写入 $PREFIX/server.yaml"
@@ -236,7 +259,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$PREFIX
-ExecStart=$PREFIX/nonerp server -config $PREFIX/server.yaml
+ExecStart=$PREFIX/nonefrp server -config $PREFIX/server.yaml
 Restart=always
 RestartSec=2
 LimitNOFILE=100000
@@ -249,7 +272,7 @@ TimeoutStopSec=20
 WantedBy=multi-user.target
 UNITFILE
   systemctl daemon-reload || { fail "daemon-reload 失败"; return 1; }
-  systemctl enable nonerp >/dev/null 2>&1 || { fail "开机自启设置失败"; return 1; }
+  systemctl enable nonefrp >/dev/null 2>&1 || { fail "开机自启设置失败"; return 1; }
   ok "已安装 $UNIT 并设为开机自启"
   return 0
 }
@@ -335,12 +358,12 @@ step_cert() {
     apt-get install -y -qq certbot python3-certbot-nginx >/dev/null 2>&1 || {
       fail "certbot 安装失败"; hint "apt-get update 后 apt install certbot python3-certbot-nginx"; return 1; }
   fi
-  if certbot --nginx -d "$RELAY_HOST" --non-interactive --agree-tos -m "$EMAIL" --redirect > /tmp/nonerp-certbot.log 2>&1; then
+  if certbot --nginx -d "$RELAY_HOST" --non-interactive --agree-tos -m "$EMAIL" --redirect > /tmp/nonefrp-certbot.log 2>&1; then
     ok "证书已就绪，自动续期"
     return 0
   fi
   fail "证书申请失败"
-  tail -5 /tmp/nonerp-certbot.log | sed 's/^/        /'
+  tail -5 /tmp/nonefrp-certbot.log | sed 's/^/        /'
   hint "检查：DNS 里 $RELAY_HOST 是否指向本机？80 端口对公网开放吗？"
   return 1
 }
@@ -357,7 +380,7 @@ step_firewall() {
 }
 
 step_health() {
-  systemctl restart nonerp || { fail "重启失败"; return 1; }
+  systemctl restart nonefrp || { fail "重启失败"; return 1; }
   for i in 1 2 3 4 5 6 7 8 9 10; do
     if check_health; then
       ok "本地 /readyz 正常"
@@ -373,7 +396,7 @@ step_health() {
     sleep 1
   done
   fail "服务没起来或 /readyz 不正常"
-  journalctl -u nonerp -n 8 --no-pager | sed 's/^/        /'
+  journalctl -u nonefrp -n 8 --no-pager | sed 's/^/        /'
   hint "多数是 server.yaml 写坏了，按 l 看日志；也可用第 3 步重写配置"
   return 1
 }
@@ -384,7 +407,7 @@ step_token() {
     return 1
   fi
 
-  OUTPUT="$("$PREFIX/nonerp" server invite -config "$PREFIX/server.yaml" -once -note "first host" 2>&1)" || {
+  OUTPUT="$("$PREFIX/nonefrp" server invite -config "$PREFIX/server.yaml" -once -note "first host" 2>&1)" || {
     fail "签发邀请码失败"
     printf '%s\n' "$OUTPUT" | sed 's/^/        /'
     return 1
@@ -396,7 +419,7 @@ step_token() {
     return 1
   fi
 
-  systemctl restart nonerp
+  systemctl restart nonefrp
   sleep 1
   ok "已签发邀请码 $CODE（一台设备）"
 
@@ -405,7 +428,7 @@ step_token() {
   printf '  邀请码:   %s\n' "$CODE"
 
   say "或者直接发这条链接"
-  ( cd "$PREFIX" && ./nonerp server link -config server.yaml -token "$CODE" )
+  ( cd "$PREFIX" && ./nonefrp server link -config server.yaml -token "$CODE" )
   return 0
 }
 
@@ -418,7 +441,7 @@ rollback() {
   read -r -p '确认回滚？输入 yes 继续: ' answer
   [ "$answer" = "yes" ] || { note "已取消"; return; }
 
-  systemctl disable --now nonerp >/dev/null 2>&1 && ok "服务已停止并取消自启"
+  systemctl disable --now nonefrp >/dev/null 2>&1 && ok "服务已停止并取消自启"
 
   if [ -f "$UNIT" ]; then rm -f "$UNIT"; systemctl daemon-reload; ok "unit 已删除"; fi
 
@@ -428,7 +451,7 @@ rollback() {
     if nginx -t >/dev/null 2>&1; then systemctl reload nginx; else warn "nginx -t 失败，未重载"; fi
   fi
 
-  read -r -p '同时删除配置和 token（/opt/nonerp）？输入 delete 确认: ' answer2
+  read -r -p '同时删除配置和 token（/opt/nonefrp）？输入 delete 确认: ' answer2
   if [ "$answer2" = "delete" ]; then rm -rf "$PREFIX"; ok "已删除 $PREFIX"; else note "保留 $PREFIX"; fi
 
   if [ -f "/etc/letsencrypt/live/$RELAY_HOST/fullchain.pem" ]; then
@@ -532,9 +555,9 @@ if [ "$AUTO" -eq 1 ]; then
   say "完成"
   if [ "$FAILED" -eq 0 ]; then
     printf '  下一步：签发 token\n'
-    printf '    cd %s && ./nonerp server token new -config server.yaml -note "我的服"\n' "$PREFIX"
-    printf '    systemctl restart nonerp\n'
-    printf '    ./nonerp server link -config server.yaml -token <token>\n'
+    printf '    cd %s && ./nonefrp server token new -config server.yaml -note "我的服"\n' "$PREFIX"
+    printf '    systemctl restart nonefrp\n'
+    printf '    ./nonefrp server link -config server.yaml -token <token>\n'
     exit 0
   fi
   printf '  有步骤失败，重跑 bash %s 用菜单逐步处理\n' "$0"
@@ -555,7 +578,7 @@ while true; do
     0) run_all ;;
     1|2|3|4|5|6|7|8|9) run_step "$choice" ;;
     t) edit_params ;;
-    l) systemctl status nonerp --no-pager 2>/dev/null | head -12; printf '\n'; journalctl -u nonerp -n 20 --no-pager 2>/dev/null ;;
+    l) systemctl status nonefrp --no-pager 2>/dev/null | head -12; printf '\n'; journalctl -u nonefrp -n 20 --no-pager 2>/dev/null ;;
     r) rollback ;;
     q|Q) printf '已退出\n'; exit 0 ;;
     *) printf '无效选择\n' ;;
