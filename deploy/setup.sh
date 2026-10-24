@@ -110,6 +110,11 @@ migrate_legacy() {
 
 migrate_legacy
 
+# ".mc.example.com" is what people type into a domain field; the suffix must
+# not start with a dot or room hosts come out as "code..mc.example.com".
+DOMAIN="${DOMAIN#.}"
+RELAY_HOST="${RELAY_HOST#.}"
+
 if [ -z "$DOMAIN" ] && [ "$AUTO" -eq 1 ]; then
   printf '缺少 --domain\n' >&2; exit 2
 fi

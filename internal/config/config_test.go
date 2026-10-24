@@ -146,6 +146,21 @@ func TestNormalizeRelayURL(t *testing.T) {
 	}
 }
 
+func TestDomainSuffixWithALeadingDot(t *testing.T) {
+	path := writeTemp(t, "server.yaml", "domain_suffix: \".mc.example.com\"\n")
+
+	cfg, err := LoadServer(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.DomainSuffix != "mc.example.com" {
+		t.Fatalf("suffix = %q", cfg.DomainSuffix)
+	}
+	if got := cfg.RoomHost("a2b3c4"); got != "a2b3c4.mc.example.com" {
+		t.Fatalf("room host = %q", got)
+	}
+}
+
 func TestRoomHost(t *testing.T) {
 	cfg := DefaultServer()
 	cfg.DomainSuffix = "mc.example.com"

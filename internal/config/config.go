@@ -128,6 +128,9 @@ func LoadServer(path string) (Server, error) {
 	if err := decodeFile(path, &cfg); err != nil {
 		return cfg, err
 	}
+	// People write the suffix with a leading dot, as in ".mc.example.com".
+	// Normalising here keeps every user of the field consistent.
+	cfg.DomainSuffix = strings.Trim(strings.TrimSpace(cfg.DomainSuffix), ".")
 	if err := cfg.Validate(); err != nil {
 		return cfg, err
 	}
@@ -190,7 +193,7 @@ func (s Server) Validate() error {
 	if s.PublicPort < 1 || s.PublicPort > 65535 {
 		return fmt.Errorf("public_port %d is out of range", s.PublicPort)
 	}
-	if strings.TrimSpace(s.DomainSuffix) == "" {
+	if strings.Trim(strings.TrimSpace(s.DomainSuffix), ".") == "" {
 		return fmt.Errorf("domain_suffix must not be empty")
 	}
 	if s.GracePeriod.Std() < 0 {
@@ -258,7 +261,9 @@ func validateRelayURL(raw string) error {
 	return nil
 }
 
-// RoomHost joins a room code and the configured domain suffix.
+// RoomHost joins a room code and the configured domain suffix. The suffix is
+// trimmed so ".mc.example.com", which is what people type, and "mc.example.com"
+// produce the same host.
 func (s Server) RoomHost(roomCode string) string {
-	return roomCode + "." + s.DomainSuffix
+	return roomCode + "." + strings.Trim(s.DomainSuffix, ".")
 }
