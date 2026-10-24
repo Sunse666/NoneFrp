@@ -97,7 +97,7 @@ func (s *Server) handleRoomLookup(w http.ResponseWriter, r *http.Request) {
 	tracked, ok := s.rooms.Get(code)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(RoomLookup{Code: code, Online: false})
+		_ = json.NewEncoder(w).Encode(RoomLookup{Code: code, Online: false, Endpoints: []string{}})
 		return
 	}
 
