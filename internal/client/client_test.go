@@ -43,6 +43,94 @@ func newAgent(t *testing.T, relayURL string) *Client {
 	return agent
 }
 
+// Probing must not spend the invite: the host will press the button a few
+// times before saving.
+func TestProbeDoesNotConsumeAnInvite(t *testing.T) {
+	cfg := config.DefaultServer()
+	cfg.DomainSuffix = "mc.example.com"
+	cfg.PublicPort = 0
+	cfg.Tokens = map[string]config.Token{"JOIN-AAAA2222": {Note: "one device", MaxDevices: 1}}
+
+	relay := server.New(cfg, slog.New(slog.DiscardHandler))
+	ts := httptest.NewServer(relay.Handler())
+	defer ts.Close()
+	url := "ws" + strings.TrimPrefix(ts.URL, "http")
+
+	for range 3 {
+		got, err := Probe(context.Background(), url, "JOIN-AAAA2222", "device-a")
+		if err != nil {
+			t.Fatalf("probe: %v", err)
+		}
+		if got.RoomDomain != "mc.example.com" {
+			t.Fatalf("room domain = %q", got.RoomDomain)
+		}
+	}
+
+	// The single device slot must still be free for a real registration.
+	agentCfg := config.DefaultClient()
+	agentCfg.Token = "JOIN-AAAA2222"
+	agentCfg.Relay = []config.Relay{{Name: "test", URL: url}}
+
+	agent, err := New(agentCfg, t.TempDir(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	registered := make(chan protocol.Registered, 1)
+	agent.OnRegistered = func(r protocol.Registered) { registered <- r }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = agent.Run(ctx) }()
+
+	select {
+	case <-registered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the invite was spent by probing")
+	}
+}
+
+func TestProbeReportsAnExhaustedInvite(t *testing.T) {
+	cfg := config.DefaultServer()
+	cfg.DomainSuffix = "mc.example.com"
+	cfg.PublicPort = 0
+	cfg.Tokens = map[string]config.Token{"JOIN-BBBB3333": {MaxDevices: 1}}
+
+	relay := server.New(cfg, slog.New(slog.DiscardHandler))
+	ts := httptest.NewServer(relay.Handler())
+	defer ts.Close()
+	url := "ws" + strings.TrimPrefix(ts.URL, "http")
+
+	if _, err := Probe(context.Background(), url, "JOIN-BBBB3333", "device-a"); err != nil {
+		t.Fatalf("first probe: %v", err)
+	}
+
+	// Register device-a for real, then the invite is used up.
+	agentCfg := config.DefaultClient()
+	agentCfg.Token = "JOIN-BBBB3333"
+	agentCfg.Relay = []config.Relay{{Name: "test", URL: url}}
+	agent, err := New(agentCfg, t.TempDir(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	registered := make(chan struct{}, 1)
+	agent.OnRegistered = func(protocol.Registered) { registered <- struct{}{} }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = agent.Run(ctx) }()
+	select {
+	case <-registered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("registration timed out")
+	}
+
+	if _, err := Probe(context.Background(), url, "JOIN-BBBB3333", "device-b"); err == nil {
+		t.Fatal("a second device should have been refused")
+	} else if !strings.Contains(err.Error(), "invite_exhausted") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestConnectRegistersRoom(t *testing.T) {
 	ts, serverCfg := startRelay(t)
 	agent := newAgent(t, ts.URL)

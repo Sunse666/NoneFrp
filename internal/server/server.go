@@ -203,6 +203,10 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		_ = peer.send(protocol.TypeError, protocol.ErrorBody{Code: protocol.ErrBadRequest, Message: err.Error()})
 		return
 	}
+	if env.Type == protocol.TypeProbe {
+		s.answerProbe(peer, token, env, log)
+		return
+	}
 	if env.Type != protocol.TypeRegister {
 		_ = peer.send(protocol.TypeError, protocol.ErrorBody{
 			Code:    protocol.ErrBadRequest,
@@ -301,6 +305,33 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 			log.Debug("ignoring control message", "type", env.Type)
 		}
 	}
+}
+
+// answerProbe reports whether a credential would be accepted, without
+// registering anything or taking a device slot.
+func (s *Server) answerProbe(writer *peer, token string, env protocol.Envelope, log *slog.Logger) {
+	probe, err := protocol.As[protocol.Probe](env)
+	if err != nil {
+		_ = writer.send(protocol.TypeError, protocol.ErrorBody{Code: protocol.ErrBadRequest, Message: err.Error()})
+		return
+	}
+
+	credential := s.cfg.Tokens[token]
+	if err := credential.Check(probe.DeviceID, s.usage.devices(token), time.Now()); err != nil {
+		code := protocol.ErrUnauthorized
+		switch {
+		case errors.Is(err, config.ErrInviteExpired):
+			code = protocol.ErrInviteExpired
+		case errors.Is(err, config.ErrInviteExhausted):
+			code = protocol.ErrInviteExhausted
+		}
+		log.Info("probe rejected", "device", probe.DeviceID, "reason", err)
+		_ = writer.send(protocol.TypeError, protocol.ErrorBody{Code: code, Message: err.Error()})
+		return
+	}
+
+	log.Info("probe accepted", "device", probe.DeviceID)
+	_ = writer.send(protocol.TypeProbeOK, protocol.ProbeOK{RoomDomain: s.cfg.DomainSuffix})
 }
 
 func (s *Server) authorized(token string) bool {

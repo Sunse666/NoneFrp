@@ -23,6 +23,8 @@ const (
 	TypeRegistered Type = "registered"
 	TypePeerJoined Type = "peer_joined"
 	TypePeerLeft   Type = "peer_left"
+	TypeProbe      Type = "probe"
+	TypeProbeOK    Type = "probe_ok"
 	TypeUnregister Type = "unregister"
 	TypeError      Type = "error"
 )
@@ -117,6 +119,17 @@ type PeerJoined struct {
 type PeerLeft struct {
 	PlayerIP string `json:"player_ip"`
 	At       string `json:"at"`
+}
+
+// Probe asks the relay whether a credential would be accepted. It must not
+// consume an invite, so the interface can offer a "test connection" button.
+type Probe struct {
+	DeviceID string `json:"device_id"`
+}
+
+// ProbeOK answers a successful probe.
+type ProbeOK struct {
+	RoomDomain string `json:"room_domain"`
 }
 
 // Unregister asks the relay to release the room immediately.
