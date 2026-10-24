@@ -187,10 +187,13 @@ schtasks /create /tn "NoneFrp" /tr ""D:\IO\Go_obj\NoneFrp\dist\NoneFrp-windows-a
 | `read client.yaml: no such file` | 没带 `-join`，也没手动创建配置 |
 | 界面显示「未连接」，红字提示 401 | token 不对，或中继端删掉了这个 token |
 | 界面显示「未连接」+ 连接被拒 | 中继地址写错 / 中继没跑 |
-| 玩家进不来，但界面显示已连接 | 检查 Paper 端口是否和「本地端口」一致 |
+| 界面「本地服务器」显示**未监听** | Minecraft 服务端没启动，或端口和配置不一致 |
+| 玩家进不来，但界面显示已连接 | 先看上一行的「本地服务器」状态 |
 | 房间码一直在变 | `client.yaml` 或数据目录换了位置，device id 跟着变了 |
 
-日志在配置文件同目录；需要看细节时加 `-debug`：
+界面每 5 秒探测一次 `127.0.0.1:<本地端口>`，「本地服务器」那一行显示「未监听」时，页面会在地址下面直接给出警告——这条能挡掉大部分"玩家进不来"。
+
+日志同时写到 **exe 同目录的 `nonerp.log`**（10 MB 轮转，保留 3 份），关掉黑窗口也还在。需要看细节时加 `-debug`：
 
 ```powershell
 .\dist\NoneFrp-windows-amd64.exe client -debug

@@ -84,6 +84,7 @@ const indexHTML = `<!doctype html>
     </div>
     <div class="muted">把这个地址发给朋友，在 Minecraft 里直接添加服务器。</div>
     <div class="error" id="error" style="display:none"></div>
+    <div class="error" id="localwarn" style="display:none"></div>
   </section>
 
   {{if .Direct}}
@@ -116,6 +117,7 @@ const indexHTML = `<!doctype html>
     <div class="row"><span class="k">中继服务器</span><span id="relay">—</span></div>
     <div class="row"><span class="k">房间码</span><span id="room">—</span></div>
     <div class="row"><span class="k">本地端口</span><span id="local">—</span></div>
+    <div class="row"><span class="k">本地服务器</span><span id="localok">探测中…</span></div>
     <div class="row"><span class="k">真实 IP 透传</span><span id="proxy">—</span></div>
     <div class="row"><span class="k">设备标识</span><span id="device">—</span></div>
   </section>
@@ -196,6 +198,15 @@ const indexHTML = `<!doctype html>
     setText('relay', s.relay_url || '—');
     setText('room', s.room_code || '—');
     setText('local', s.local_port ? '127.0.0.1:' + s.local_port : '—');
+    setText('localok', s.local_ok ? '正常监听' : '未监听');
+
+    var localwarn = document.getElementById('localwarn');
+    if (s.local_ok === false) {
+      localwarn.textContent = '本地 Minecraft 服务器没有在 127.0.0.1:' + s.local_port + ' 上监听，玩家连进来会失败。请确认服务端已启动，且端口和这里一致。';
+      localwarn.style.display = 'block';
+    } else {
+      localwarn.style.display = 'none';
+    }
     setText('proxy', s.proxy_protocol ? '已开启' : '未开启');
     setText('device', (s.device_id || '').slice(0, 8) || '—');
 

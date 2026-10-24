@@ -269,6 +269,45 @@ func waitForPlayers(t *testing.T, agent *Client, want int, timeout time.Duration
 	return agent.Status().Players
 }
 
+func TestProbeReportsTheLocalServer(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	cfg := config.DefaultClient()
+	cfg.Local.Port = port
+	cfg.Token = "NFRP-TESTTEST"
+	cfg.Relay = []config.Relay{{Name: "test", URL: "ws://127.0.0.1:1"}}
+
+	agent, err := New(cfg, t.TempDir(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	agent.checkLocal()
+	if !agent.Status().LocalOK {
+		t.Fatal("the listening server was not detected")
+	}
+
+	_ = ln.Close()
+	agent.checkLocal()
+	if agent.Status().LocalOK {
+		t.Fatal("a closed port was still reported as listening")
+	}
+}
+
 func TestServeStreamReportsUnreachableLocalServer(t *testing.T) {
 	// Bind and close a listener to obtain a port that nothing listens on.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

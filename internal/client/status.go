@@ -16,10 +16,12 @@ type Status struct {
 	ProxyProtocol bool   `json:"proxy_protocol"`
 	Connected     bool   `json:"connected"`
 	Players       int    `json:"players"`
-	BytesUp       int64  `json:"bytes_up"`
-	BytesDown     int64  `json:"bytes_down"`
-	LastError     string `json:"last_error,omitempty"`
-	ConnectedAt   string `json:"connected_at,omitempty"`
+	// LocalOK reports whether the local Minecraft server answered a TCP probe.
+	LocalOK     bool   `json:"local_ok"`
+	BytesUp     int64  `json:"bytes_up"`
+	BytesDown   int64  `json:"bytes_down"`
+	LastError   string `json:"last_error,omitempty"`
+	ConnectedAt string `json:"connected_at,omitempty"`
 }
 
 type statusStore struct {
@@ -67,6 +69,10 @@ func (s *statusStore) markDisconnected(err error) {
 			st.LastError = err.Error()
 		}
 	})
+}
+
+func (s *statusStore) setLocal(ok bool) {
+	s.with(func(st *Status) { st.LocalOK = ok })
 }
 
 func (s *statusStore) streamStarted() {

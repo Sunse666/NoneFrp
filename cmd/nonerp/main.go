@@ -18,6 +18,7 @@ import (
 	"github.com/Sunse666/NoneFrp/internal/auth"
 	"github.com/Sunse666/NoneFrp/internal/config"
 	"github.com/Sunse666/NoneFrp/internal/link"
+	"github.com/Sunse666/NoneFrp/internal/logging"
 	"github.com/Sunse666/NoneFrp/internal/server"
 	"github.com/Sunse666/NoneFrp/internal/supervisor"
 	"github.com/Sunse666/NoneFrp/internal/ui"
@@ -228,7 +229,8 @@ func runClient(args []string) error {
 		cfg.Token = *token
 	}
 
-	logger := newLogger(*debug)
+	logger, closeLog := logging.New(*debug, filepath.Join(filepath.Dir(*configPath), "nonerp.log"))
+	defer closeLog()
 
 	if *join != "" {
 		request, err := link.ParseJoin(*join)

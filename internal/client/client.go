@@ -79,6 +79,8 @@ func (c *Client) DeviceID() string { return c.deviceID }
 
 // Run keeps the agent registered until ctx is cancelled.
 func (c *Client) Run(ctx context.Context) error {
+	go c.probeLocal(ctx)
+
 	backoff := minBackoff
 	for {
 		if err := ctx.Err(); err != nil {
