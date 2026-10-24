@@ -228,7 +228,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 	relays := make([]config.Relay, 0, 4)
 	for _, line := range strings.Split(r.PostFormValue("relays"), "\n") {
-		line = strings.TrimSpace(line)
+		// Someone will type "relay.example.com" instead of the full url.
+		line = config.NormalizeRelayURL(line)
 		if line == "" {
 			continue
 		}

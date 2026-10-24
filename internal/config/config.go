@@ -220,6 +220,19 @@ func (c Client) Validate() error {
 	return nil
 }
 
+// NormalizeRelayURL accepts what a person would type into a form: a bare
+// hostname is assumed to be a secure websocket endpoint.
+func NormalizeRelayURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.Contains(trimmed, "://") {
+		return trimmed
+	}
+	return "wss://" + strings.TrimSuffix(trimmed, "/")
+}
+
 func validateRelayURL(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("relay url must not be empty")

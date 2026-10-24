@@ -128,6 +128,22 @@ token: t
 	}
 }
 
+func TestNormalizeRelayURL(t *testing.T) {
+	cases := map[string]string{
+		"relay.example.com":       "wss://relay.example.com",
+		" relay.example.com ":     "wss://relay.example.com",
+		"relay.example.com/":      "wss://relay.example.com",
+		"ws://127.0.0.1:8080":     "ws://127.0.0.1:8080",
+		"wss://relay.example.com": "wss://relay.example.com",
+		"":                        "",
+	}
+	for input, want := range cases {
+		if got := NormalizeRelayURL(input); got != want {
+			t.Fatalf("NormalizeRelayURL(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestRoomHost(t *testing.T) {
 	cfg := DefaultServer()
 	cfg.DomainSuffix = "mc.example.com"
