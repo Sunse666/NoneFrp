@@ -383,17 +383,29 @@ step_token() {
     fail "中继还没跑起来"
     return 1
   fi
-  TOKEN="$("$PREFIX/nonerp" server token new -config "$PREFIX/server.yaml" -note "first host" 2>&1 | sed -n 's/^token: //p')"
-  if [ -z "$TOKEN" ]; then
-    fail "签发失败"
-    printf '%s\n' "$TOKEN" | sed 's/^/        /'
+
+  OUTPUT="$("$PREFIX/nonerp" server invite -config "$PREFIX/server.yaml" -once -note "first host" 2>&1)" || {
+    fail "签发邀请码失败"
+    printf '%s\n' "$OUTPUT" | sed 's/^/        /'
+    return 1
+  }
+  CODE="$(printf '%s\n' "$OUTPUT" | sed -n 's/^invite:  *//p')"
+  if [ -z "$CODE" ]; then
+    fail "没能从输出里读到邀请码"
+    printf '%s\n' "$OUTPUT" | sed 's/^/        /'
     return 1
   fi
+
   systemctl restart nonerp
   sleep 1
-  ok "已签发 $TOKEN"
-  say "发给房主的链接"
-  ( cd "$PREFIX" && ./nonerp server link -config server.yaml -token "$TOKEN" )
+  ok "已签发邀请码 $CODE（一台设备）"
+
+  say "把这两行发给房主"
+  printf '  中继地址: %s\n' "$RELAY_HOST"
+  printf '  邀请码:   %s\n' "$CODE"
+
+  say "或者直接发这条链接"
+  ( cd "$PREFIX" && ./nonerp server link -config server.yaml -token "$CODE" )
   return 0
 }
 
@@ -463,7 +475,7 @@ render() {
   printf '   [%s] 6  申请 TLS 证书\n' "$(paint 6)"
   printf '   [%s] 7  放行端口\n' "$(paint 7)"
   printf '   [%s] 8  启动并自检\n' "$(paint 8)"
-  printf '   [%s] 9  签发第一个 token 并生成链接\n' "$(paint 9)"
+  printf '   [%s] 9  签发第一个邀请码\n' "$(paint 9)"
   printf '  ----------------------------------------------------------\n'
   printf '   0  一键执行 1-8\n'
   printf '   t  修改域名 / 控制面 / 邮箱\n'
@@ -483,7 +495,7 @@ run_step() {
     6) say "6/9 申请证书";        step_cert ;;
     7) say "7/9 放行端口";        step_firewall ;;
     8) say "8/9 启动并自检";      step_health ;;
-    9) say "9/9 签发 token";      step_token ;;
+    9) say "9/9 签发邀请码";      step_token ;;
   esac
 }
 
