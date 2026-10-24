@@ -174,7 +174,12 @@ func forward(ctx context.Context, player net.Conn, resolver *resolver, logger *s
 
 	target, err := resolver.get(ctx)
 	if err != nil {
-		logger.Warn("cannot reach the relay", "error", err)
+		if errors.Is(err, ErrRoomNotFound) {
+			logger.Warn("the relay does not know this room code; check it, and make sure the relay runs a version with /v1/room",
+				"room", resolver.room)
+		} else {
+			logger.Warn("cannot reach the relay", "error", err)
+		}
 		return
 	}
 

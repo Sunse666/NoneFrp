@@ -279,6 +279,21 @@ func runJoin(args []string) error {
 	defer stop()
 
 	fmt.Printf("room %s via %s\n", *room, *relay)
+
+	// Say something useful before the first player connects: a wrong room code
+	// should not look like a silent hang.
+	if target, err := join.Lookup(ctx, *relay, *room); err != nil {
+		if errors.Is(err, join.ErrRoomNotFound) {
+			fmt.Printf("warning: the relay does not know room %q\n", *room)
+		} else {
+			fmt.Printf("warning: cannot reach the relay: %v\n", err)
+		}
+	} else if target.Online {
+		fmt.Printf("host online: %d direct address(es), relay %s\n", len(target.Endpoints), target.RelayAddress)
+	} else {
+		fmt.Printf("host is offline; the relay will be used when it comes back\n")
+	}
+
 	fmt.Printf("listening on %s — in Minecraft add a server called \"localhost\"\n", *listen)
 	fmt.Println("connections try the host directly first and fall back to the relay.")
 	fmt.Println("keep this window open while playing; close it to leave the room.")
