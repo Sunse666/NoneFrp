@@ -194,6 +194,23 @@ const indexHTML = `<!doctype html>
     return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i];
   }
 
+  // Turn the agent's English errors into something a host can act on.
+  function describe(raw) {
+    if (raw.indexOf('401') >= 0) {
+      return '中继不认识这个邀请码：它可能已被撤销，或者中继换过配置。请在设置里填一个新的邀请码并保存。';
+    }
+    if (raw.indexOf('invite_exhausted') >= 0) {
+      return '这个邀请码已经用完了（设备数已达上限）。请让中继管理员再发一个。';
+    }
+    if (raw.indexOf('invite_expired') >= 0) {
+      return '这个邀请码已过期。请让中继管理员再发一个。';
+    }
+    if (raw.indexOf('no such host') >= 0 || raw.indexOf('timeout') >= 0) {
+      return '连不上中继：检查中继地址是否写对，以及本机网络是否正常。';
+    }
+    return '最近一次错误：' + raw;
+  }
+
   function setText(id, value) {
     var el = document.getElementById(id);
     if (el) el.textContent = value;
@@ -226,7 +243,7 @@ const indexHTML = `<!doctype html>
 
     var error = document.getElementById('error');
     if (s.last_error) {
-      error.textContent = '最近一次错误：' + s.last_error;
+      error.textContent = describe(s.last_error);
       error.style.display = 'block';
     } else {
       error.style.display = 'none';

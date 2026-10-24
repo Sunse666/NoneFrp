@@ -137,6 +137,9 @@ func (c *Client) connect(ctx context.Context, relay config.Relay) (bool, error) 
 		if resp != nil {
 			status = resp.StatusCode
 		}
+		if status == http.StatusUnauthorized {
+			return false, fmt.Errorf("the relay does not accept this credential (401): it may have been revoked, or the relay's tokens changed — ask for a new invite: %w", err)
+		}
 		return false, fmt.Errorf("dial %s: %w (http %d)", endpoint, err, status)
 	}
 	defer func() { _ = conn.Close() }()
