@@ -142,6 +142,18 @@ func (c *Client) serveStream(stream net.Conn, meta protocol.StreamMeta) {
 	}
 	result := proxy.SpliceWith(stream, local, options)
 	c.status.streamFinished(isPlayer, result.Up, result.Down)
+
+	// The player sent something and the local server answered nothing: either it
+	// refused the connection or it could not parse the first packet. The PROXY
+	// header is the usual reason.
+	if isPlayer && result.Up > 0 && result.Down == 0 {
+		hint := "the local server closed the connection without answering; check its logs"
+		if c.cfg.Local.ProxyProtocol {
+			hint += ", and note that proxy_protocol is on: a vanilla server rejects the PROXY header"
+		}
+		c.log.Warn("player connection produced no reply", "trace", meta.TraceID, "up", result.Up, "hint", hint)
+	}
+
 	c.log.Debug("stream finished",
 		"trace", meta.TraceID,
 		"up", result.Up,
