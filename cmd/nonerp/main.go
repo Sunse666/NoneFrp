@@ -102,7 +102,9 @@ func runServer(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return server.New(cfg, newLogger(*debug)).Run(ctx)
+	srv := server.New(cfg, newLogger(*debug))
+	srv.SetStateFile(filepath.Join(filepath.Dir(*configPath), "state.json"))
+	return srv.Run(ctx)
 }
 
 func runServerToken(args []string) error {

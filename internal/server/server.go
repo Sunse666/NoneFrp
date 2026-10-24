@@ -41,6 +41,7 @@ type Server struct {
 	rooms          *room.Registry
 	plane          *dataplane
 	limiter        *ipLimiter
+	usage          *usageStore
 	log            *slog.Logger
 	upgrader       websocket.Upgrader
 	publicListener net.Listener
@@ -56,6 +57,7 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 		rooms:   room.NewRegistry(cfg.GracePeriod.Std()),
 		plane:   newDataplane(),
 		limiter: newIPLimiter(cfg.Limits.ConnRatePerIP),
+		usage:   newUsageStore(""),
 		log:     logger,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -65,6 +67,11 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 			CheckOrigin: func(*http.Request) bool { return true },
 		},
 	}
+}
+
+// SetStateFile makes credential usage survive a restart. Call it before Run.
+func (s *Server) SetStateFile(path string) {
+	s.usage = newUsageStore(path)
 }
 
 // Handler returns the HTTP routes of the relay.
@@ -161,7 +168,8 @@ func (s *Server) liveRooms() map[string]bool {
 }
 
 func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
-	if !s.authorized(bearerToken(r)) {
+	token := bearerToken(r)
+	if !s.authorized(token) {
 		s.log.Warn("rejected agent", "remote", r.RemoteAddr, "reason", "invalid token")
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
@@ -208,6 +216,21 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The credential may be an invite with a device cap or an expiry.
+	credential := s.cfg.Tokens[token]
+	if err := credential.Check(reg.DeviceID, s.usage.devices(token), time.Now()); err != nil {
+		code := protocol.ErrUnauthorized
+		switch {
+		case errors.Is(err, config.ErrInviteExpired):
+			code = protocol.ErrInviteExpired
+		case errors.Is(err, config.ErrInviteExhausted):
+			code = protocol.ErrInviteExhausted
+		}
+		log.Warn("credential rejected", "device", reg.DeviceID, "reason", err)
+		_ = peer.send(protocol.TypeError, protocol.ErrorBody{Code: code, Message: err.Error()})
+		return
+	}
+
 	created, err := s.rooms.Create(reg.DeviceID, reg.RoomCode, "", s.cfg.PublicPort)
 	if err != nil {
 		code := protocol.ErrBadRequest
@@ -229,6 +252,10 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Warn("failed to confirm registration", "room", created.Code, "error", err)
 		return
+	}
+
+	if err := s.usage.remember(token, reg.DeviceID); err != nil {
+		log.Warn("could not record credential usage", "error", err)
 	}
 
 	log = log.With("room", created.Code, "device", reg.DeviceID)

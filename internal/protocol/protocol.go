@@ -84,6 +84,8 @@ const (
 	ErrUnauthorized    ErrorCode = "unauthorized"
 	ErrUpgradeRequired ErrorCode = "upgrade_required"
 	ErrRoomConflict    ErrorCode = "room_conflict"
+	ErrInviteExpired   ErrorCode = "invite_expired"
+	ErrInviteExhausted ErrorCode = "invite_exhausted"
 	ErrRoomNotFound    ErrorCode = "room_not_found"
 	ErrRateLimited     ErrorCode = "rate_limited"
 	ErrInternal        ErrorCode = "internal"

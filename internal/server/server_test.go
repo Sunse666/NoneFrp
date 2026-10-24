@@ -66,6 +66,92 @@ func writeMessage(t *testing.T, conn *websocket.Conn, t2 protocol.Type, payload 
 	}
 }
 
+func newAuthTestServer(t *testing.T, tokens map[string]config.Token) (*Server, *httptest.Server) {
+	t.Helper()
+	cfg := config.DefaultServer()
+	cfg.DomainSuffix = "mc.example.com"
+	cfg.PublicPort = 0
+	cfg.Tokens = tokens
+
+	srv := New(cfg, slog.New(slog.DiscardHandler))
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	return srv, ts
+}
+
+func register(t *testing.T, conn *websocket.Conn, deviceID string) protocol.Envelope {
+	t.Helper()
+	writeMessage(t, conn, protocol.TypeRegister, protocol.Register{DeviceID: deviceID, LocalPort: 25565})
+	return readMessage(t, conn)
+}
+
+// One invite, one device. The same device may reconnect as often as it likes,
+// which is what "single use" has to mean for a host that drops offline.
+func TestInviteIsBoundToOneDevice(t *testing.T) {
+	_, ts := newAuthTestServer(t, map[string]config.Token{
+		"JOIN-AAAA2222": {Note: "one device", MaxDevices: 1},
+	})
+
+	first, _, err := dial(t, ts, "JOIN-AAAA2222")
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = first.Close() }()
+	if env := register(t, first, "device-a"); env.Type != protocol.TypeRegistered {
+		t.Fatalf("first registration: %s", env.Type)
+	}
+
+	again, _, err := dial(t, ts, "JOIN-AAAA2222")
+	if err != nil {
+		t.Fatalf("dial again: %v", err)
+	}
+	defer func() { _ = again.Close() }()
+	if env := register(t, again, "device-a"); env.Type != protocol.TypeRegistered {
+		t.Fatalf("the same device must be allowed back: %s", env.Type)
+	}
+
+	other, _, err := dial(t, ts, "JOIN-AAAA2222")
+	if err != nil {
+		t.Fatalf("dial other: %v", err)
+	}
+	defer func() { _ = other.Close() }()
+	env := register(t, other, "device-b")
+	if env.Type != protocol.TypeError {
+		t.Fatalf("a second device must be rejected, got %s", env.Type)
+	}
+	body, err := protocol.As[protocol.ErrorBody](env)
+	if err != nil {
+		t.Fatalf("as: %v", err)
+	}
+	if body.Code != protocol.ErrInviteExhausted {
+		t.Fatalf("code = %q", body.Code)
+	}
+}
+
+func TestExpiredInviteIsRejected(t *testing.T) {
+	_, ts := newAuthTestServer(t, map[string]config.Token{
+		"JOIN-EEEE3333": {Expires: time.Now().Add(-time.Minute)},
+	})
+
+	conn, _, err := dial(t, ts, "JOIN-EEEE3333")
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	env := register(t, conn, "device-a")
+	if env.Type != protocol.TypeError {
+		t.Fatalf("an expired invite must be rejected, got %s", env.Type)
+	}
+	body, err := protocol.As[protocol.ErrorBody](env)
+	if err != nil {
+		t.Fatalf("as: %v", err)
+	}
+	if body.Code != protocol.ErrInviteExpired {
+		t.Fatalf("code = %q", body.Code)
+	}
+}
+
 func TestRegisterAssignsRoom(t *testing.T) {
 	_, ts := newTestServer(t)
 
