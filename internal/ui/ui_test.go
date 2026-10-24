@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -21,9 +23,18 @@ type fakeSource struct {
 func (f fakeSource) Status() client.Status { return f.status }
 
 type fakeSettings struct {
-	cfg     config.Client
-	applied *config.Client
-	err     error
+	cfg         config.Client
+	applied     *config.Client
+	err         error
+	probeErr    error
+	probeDomain string
+}
+
+func (f *fakeSettings) Probe(_ context.Context, _, _ string) (string, error) {
+	if f.probeErr != nil {
+		return "", f.probeErr
+	}
+	return f.probeDomain, nil
 }
 
 func (f *fakeSettings) Config() config.Client { return f.cfg }
@@ -178,7 +189,7 @@ func TestSaveJoinLinkOverridesFields(t *testing.T) {
 	form := url.Values{}
 	form.Set("csrf", "testtoken")
 	form.Set("join", "nonerp://join?relay=wss%3A%2F%2Frelay2.example.com&room=b7k2m9&token=NFRP-NEWTOKEN")
-	form.Set("relays", "")
+	form.Set("relay", "")
 	form.Set("token", "")
 	form.Set("local_port", "25565")
 	form.Set("room_code", "auto")
@@ -215,7 +226,7 @@ func TestSaveRejectsBadJoinLink(t *testing.T) {
 	form := url.Values{}
 	form.Set("csrf", "testtoken")
 	form.Set("join", "https://not-a-join-link")
-	form.Set("relays", "wss://relay.example.com")
+	form.Set("relay", "relay.example.com")
 	form.Set("local_port", "25565")
 
 	resp, err := client.PostForm(ts.URL+"/testtoken/settings", form)
@@ -237,7 +248,7 @@ func TestSaveSettings(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("csrf", "testtoken")
-	form.Set("relays", "wss://a.example.com\nwss://b.example.com\n")
+	form.Set("relay", "a.example.com")
 	form.Set("token", "NFRP-NEWTOKEN")
 	form.Set("local_port", "25599")
 	form.Set("room_code", "b7k2m9")
@@ -256,8 +267,8 @@ func TestSaveSettings(t *testing.T) {
 		t.Fatal("the settings were never applied")
 	}
 	got := *settings.applied
-	if len(got.Relay) != 2 || got.Relay[1].URL != "wss://b.example.com" {
-		t.Fatalf("relay = %+v", got.Relay)
+	if len(got.Relay) != 1 || got.Relay[0].URL != "wss://a.example.com" {
+		t.Fatalf("relay = %+v, want the bare hostname completed to wss", got.Relay)
 	}
 	if got.Token != "NFRP-NEWTOKEN" {
 		t.Fatalf("token = %q", got.Token)
@@ -301,7 +312,7 @@ func TestSaveSettingsRejectsForeignCsrf(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("csrf", "guessed")
-	form.Set("relays", "wss://a.example.com")
+	form.Set("relay", "a.example.com")
 	form.Set("local_port", "25565")
 
 	resp, err := http.PostForm(ts.URL+"/testtoken/settings", form)
@@ -327,7 +338,7 @@ func TestSaveSettingsRejectsBadPort(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("csrf", "testtoken")
-	form.Set("relays", "wss://a.example.com")
+	form.Set("relay", "a.example.com")
 	form.Set("local_port", "not-a-port")
 
 	resp, err := client.PostForm(ts.URL+"/testtoken/settings", form)
@@ -348,6 +359,88 @@ func TestSaveSettingsRejectsBadPort(t *testing.T) {
 	}
 	if settings.applied != nil {
 		t.Fatal("an invalid port was applied")
+	}
+}
+
+func TestTestConnectionReportsSuccess(t *testing.T) {
+	settings := defaultSettings()
+	settings.probeDomain = "mc.example.com"
+	ts, _ := newTestUI(t, client.Status{}, settings)
+
+	form := url.Values{}
+	form.Set("csrf", "testtoken")
+	form.Set("relay", "relay.example.com")
+	form.Set("token", "JOIN-AAAA2222")
+
+	resp, err := http.PostForm(ts.URL+"/testtoken/api/test", form)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var got struct {
+		OK      bool   `json:"ok"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.OK {
+		t.Fatalf("ok = false, message = %q", got.Message)
+	}
+	if !strings.Contains(got.Message, "mc.example.com") {
+		t.Fatalf("message = %q", got.Message)
+	}
+	if settings.applied != nil {
+		t.Fatal("testing a connection must not save anything")
+	}
+}
+
+func TestTestConnectionReportsFailure(t *testing.T) {
+	settings := defaultSettings()
+	settings.probeErr = errors.New("invite_exhausted: invite exhausted")
+	ts, _ := newTestUI(t, client.Status{}, settings)
+
+	form := url.Values{}
+	form.Set("csrf", "testtoken")
+	form.Set("relay", "relay.example.com")
+	form.Set("token", "JOIN-AAAA2222")
+
+	resp, err := http.PostForm(ts.URL+"/testtoken/api/test", form)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var got struct {
+		OK      bool   `json:"ok"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.OK {
+		t.Fatal("a failed probe was reported as success")
+	}
+	if !strings.Contains(got.Message, "invite_exhausted") {
+		t.Fatalf("message = %q", got.Message)
+	}
+}
+
+func TestTestConnectionRequiresCsrf(t *testing.T) {
+	ts, _ := newTestUI(t, client.Status{}, defaultSettings())
+
+	form := url.Values{}
+	form.Set("csrf", "guessed")
+	form.Set("relay", "relay.example.com")
+
+	resp, err := http.PostForm(ts.URL+"/testtoken/api/test", form)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.StatusCode)
 	}
 }
 

@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -221,7 +222,8 @@ func (c Client) Validate() error {
 }
 
 // NormalizeRelayURL accepts what a person would type into a form: a bare
-// hostname is assumed to be a secure websocket endpoint.
+// hostname is assumed to be a secure websocket endpoint, except on loopback
+// where a plain websocket is what a local test uses.
 func NormalizeRelayURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -230,7 +232,20 @@ func NormalizeRelayURL(raw string) string {
 	if strings.Contains(trimmed, "://") {
 		return trimmed
 	}
-	return "wss://" + strings.TrimSuffix(trimmed, "/")
+
+	address := strings.TrimSuffix(trimmed, "/")
+	host := address
+	if withoutPort, _, err := net.SplitHostPort(address); err == nil {
+		host = withoutPort
+	}
+	host = strings.Trim(host, "[]")
+
+	scheme := "wss://"
+	switch strings.ToLower(host) {
+	case "127.0.0.1", "localhost", "::1":
+		scheme = "ws://"
+	}
+	return scheme + address
 }
 
 func validateRelayURL(raw string) error {

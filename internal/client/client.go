@@ -74,6 +74,12 @@ func New(cfg config.Client, dataDir string, logger *slog.Logger) (*Client, error
 // Status returns a snapshot of the agent state.
 func (c *Client) Status() Status { return c.status.snapshot() }
 
+// DeviceID loads or creates the stable identifier kept in dir. Probes use it
+// without starting an agent.
+func DeviceID(dir string) (string, error) {
+	return loadOrCreateDeviceID(dir)
+}
+
 // DeviceID returns the stable identifier used to reclaim rooms after a restart.
 func (c *Client) DeviceID() string { return c.deviceID }
 

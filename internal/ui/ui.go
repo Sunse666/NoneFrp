@@ -36,6 +36,8 @@ type Source interface {
 type Settings interface {
 	Config() config.Client
 	Apply(cfg config.Client) error
+	// Probe checks a credential without registering anything.
+	Probe(ctx context.Context, relayURL, token string) (string, error)
 }
 
 // Server is the loopback web interface.
@@ -76,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/"+s.token+"/", s.handleIndex)
 	mux.HandleFunc("/"+s.token+"/api/status", s.handleStatus)
 	mux.HandleFunc("/"+s.token+"/settings", s.handleSettings)
+	mux.HandleFunc("/"+s.token+"/api/test", s.handleTest)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		http.NotFound(w, nil)
 	})
@@ -138,7 +141,7 @@ type pageData struct {
 	Base          string
 	CSRF          string
 	Configured    bool
-	Relays        string
+	Relay         string
 	Token         string
 	LocalPort     int
 	Direct        []string
@@ -168,7 +171,7 @@ func (s *Server) buildPage(r *http.Request) pageData {
 	for _, relay := range cfg.Relay {
 		urls = append(urls, relay.URL)
 	}
-	data.Relays = strings.Join(urls, "\n")
+	data.Relay = strings.Join(urls, "\n")
 	data.Token = maskToken(cfg.Token)
 	data.LocalPort = cfg.Local.Port
 	data.RoomCode = cfg.Room.Code
@@ -226,16 +229,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 	cfg := s.settings.Config()
 
-	relays := make([]config.Relay, 0, 4)
-	for _, line := range strings.Split(r.PostFormValue("relays"), "\n") {
-		// Someone will type "relay.example.com" instead of the full url.
-		line = config.NormalizeRelayURL(line)
-		if line == "" {
-			continue
-		}
-		relays = append(relays, config.Relay{Name: fmt.Sprintf("relay-%d", len(relays)+1), URL: line})
+	// The form carries one address; the configuration can still hold several.
+	relayURL := config.NormalizeRelayURL(r.PostFormValue("relay"))
+	if relayURL != "" {
+		cfg.Relay = []config.Relay{{Name: "relay-1", URL: relayURL}}
 	}
-	cfg.Relay = relays
 
 	// An empty token field means "keep the current token".
 	if token := strings.TrimSpace(r.PostFormValue("token")); token != "" {
@@ -276,6 +274,66 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.redirect(w, r, "设置已保存，正在用新配置重新连接", false)
+}
+
+// handleTest answers the "test connection" button: it probes the credential
+// without saving or spending it.
+func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if s.settings == nil {
+		http.Error(w, "settings are read only", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		writeTestResult(w, false, "表单无法解析")
+		return
+	}
+	if r.PostFormValue("csrf") != s.token {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	current := s.settings.Config()
+	relayURL := config.NormalizeRelayURL(r.PostFormValue("relay"))
+	if relayURL == "" && len(current.Relay) > 0 {
+		relayURL = current.Relay[0].URL
+	}
+	token := strings.TrimSpace(r.PostFormValue("token"))
+	if token == "" {
+		token = current.Token
+	}
+	if relayURL == "" {
+		writeTestResult(w, false, "还没有填写中继地址")
+		return
+	}
+	if token == "" {
+		writeTestResult(w, false, "还没有填写邀请码")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	domain, err := s.settings.Probe(ctx, relayURL, token)
+	if err != nil {
+		writeTestResult(w, false, err.Error())
+		return
+	}
+
+	message := "连接成功"
+	if domain != "" {
+		message = "连接成功，房间地址会是 <房间码>." + domain
+	}
+	writeTestResult(w, true, message)
+}
+
+func writeTestResult(w http.ResponseWriter, ok bool, message string) {
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "message": message})
 }
 
 func (s *Server) redirect(w http.ResponseWriter, r *http.Request, message string, isError bool) {

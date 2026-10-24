@@ -62,6 +62,32 @@ curl -s https://relay.example.com/readyz   # 健康检查，期望 ready
 
 改配置的固定流程：**改 `/opt/nonerp/server.yaml` → `systemctl restart nonerp` → `curl readyz`**。
 
+## 签发邀请码（给一个新朋友）
+
+```bash
+cd /opt/nonerp
+./nonerp server invite --once --note "小明"        # 只允许一台设备
+#  invite:  JOIN-3X8P2R9T
+#  policy:  0/1 devices, never expires
+systemctl restart nonerp
+```
+
+房主在界面里填两个东西：中继地址（`relay.example.com`）+ 邀请码（`JOIN-3X8P2R9T`），点「测试连接」确认，再点「保存并重连」。
+
+- `--devices 5` 允许 5 台设备，`--days 30` 30 天后失效
+- 不加任何参数 = 永久、不限设备（等价于老的 token）
+- 「一次性」指的是**一台设备**：同一台机器断线重连不受影响
+
+查看谁用掉了哪个码：
+
+```bash
+./nonerp server token ls -config server.yaml
+# JOIN-3X8P2R9T  1/1 devices, never expires        小明
+# NFRP-LEGACY22  unlimited devices, never expires   老张
+```
+
+用掉记录在 `/opt/nonerp/state.json`，重启不丢。
+
 ## 签发新 token（给一个新房主）
 
 ```bash

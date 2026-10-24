@@ -135,6 +135,8 @@ func TestNormalizeRelayURL(t *testing.T) {
 		"relay.example.com/":      "wss://relay.example.com",
 		"ws://127.0.0.1:8080":     "ws://127.0.0.1:8080",
 		"wss://relay.example.com": "wss://relay.example.com",
+		"127.0.0.1:18999":         "ws://127.0.0.1:18999",
+		"localhost:18999":         "ws://localhost:18999",
 		"":                        "",
 	}
 	for input, want := range cases {

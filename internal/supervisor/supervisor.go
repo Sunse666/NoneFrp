@@ -83,6 +83,20 @@ func (r *Runner) Status() client.Status {
 	return agent.Status()
 }
 
+// Probe checks a credential against a relay without touching the running agent
+// or consuming an invite.
+func (r *Runner) Probe(ctx context.Context, relayURL, token string) (string, error) {
+	deviceID, err := client.DeviceID(r.dataDir)
+	if err != nil {
+		return "", err
+	}
+	result, err := client.Probe(ctx, relayURL, token, deviceID)
+	if err != nil {
+		return "", err
+	}
+	return result.RoomDomain, nil
+}
+
 // Apply validates cfg, writes it to disk and restarts the agent with it. The
 // previous agent keeps running when validation or the write fails.
 func (r *Runner) Apply(cfg config.Client) error {

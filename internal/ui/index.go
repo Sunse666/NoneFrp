@@ -136,12 +136,14 @@ const indexHTML = `<!doctype html>
         <input type="text" name="join" placeholder="nonerp://join?..." autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
-        <span>中继地址（每行一个，按顺序尝试）</span>
-        <textarea name="relays" spellcheck="false">{{.Relays}}</textarea>
+        <span>中继地址</span>
+        <input type="text" name="relay" value="{{.Relay}}" placeholder="relay.example.com"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="field">
-        <span>访问令牌（留空保持不变）</span>
-        <input type="password" name="token" placeholder="{{.Token}}" autocomplete="off" spellcheck="false">
+        <span>邀请码（也接受整条 nonerp:// 链接；留空保持不变）</span>
+        <input type="text" name="token" placeholder="{{.Token}}"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="field">
         <span>本地服务器端口</span>
@@ -159,8 +161,10 @@ const indexHTML = `<!doctype html>
       </div>
       <div class="actions">
         <button type="submit" class="primary">保存并重连</button>
-        <span class="muted">保存后立刻用新配置重连，正在游戏的玩家会短暂断开。</span>
+        <button type="button" id="test">测试连接</button>
+        <span class="muted" id="testresult"></span>
       </div>
+      <div class="muted">测试只校验邀请码，不会消耗它。</div>
     </form>
   </section>
   {{end}}
@@ -225,6 +229,24 @@ const indexHTML = `<!doctype html>
       .then(function (s) { if (s) render(s); })
       .catch(function () {})
       .then(function () { timer = setTimeout(tick, 2000); });
+  }
+
+  var testButton = document.getElementById('test');
+  if (testButton) {
+    testButton.addEventListener('click', function () {
+      var form = testButton.form;
+      var body = new URLSearchParams();
+      body.set('csrf', {{.CSRF}});
+      body.set('relay', form.relay.value);
+      body.set('token', form.token.value);
+
+      var out = document.getElementById('testresult');
+      out.textContent = '连接中…';
+      fetch(base + '/api/test', { method: 'POST', body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (r) { out.textContent = (r.ok ? '✓ ' : '✗ ') + r.message; })
+        .catch(function () { out.textContent = '✗ 请求失败'; });
+    });
   }
 
   document.getElementById('copy').addEventListener('click', function () {
