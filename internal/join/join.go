@@ -29,6 +29,9 @@ const (
 	dialTimeout = 3 * time.Second
 	// spliceIdle closes a connection nobody has used for a while.
 	spliceIdle = 10 * time.Minute
+	// lookupTimeout bounds one call to the relay. A player waiting to log in
+	// must never be held up by a slow lookup.
+	lookupTimeout = 5 * time.Second
 )
 
 // ErrRoomNotFound means the relay has no such room.
@@ -93,7 +96,8 @@ func Lookup(ctx context.Context, relay, code string) (Target, error) {
 		return target, err
 	}
 
-	response, err := http.DefaultClient.Do(request)
+	client := &http.Client{Timeout: lookupTimeout}
+	response, err := client.Do(request)
 	if err != nil {
 		return target, fmt.Errorf("lookup %s: %w", url, err)
 	}
@@ -209,7 +213,7 @@ func forward(ctx context.Context, player net.Conn, resolver *resolver, logger *s
 	}
 	defer func() { _ = upstream.Close() }()
 
-	logger.Debug("player connected", "room", target.Code, "via", via)
+	logger.Info("player connected", "room", target.Code, "via", via)
 
 	result := proxy.SpliceWith(player, upstream, proxy.Options{
 		Idle:             spliceIdle,
@@ -217,7 +221,11 @@ func forward(ctx context.Context, player net.Conn, resolver *resolver, logger *s
 		// The client answers a status ping and closes: wait for the reply.
 		CloseOnClientEOF: false,
 	})
-	logger.Debug("player finished", "via", via, "up", result.Up, "down", result.Down, "error", result.Err)
+	if result.Err != nil {
+		logger.Warn("player connection failed", "via", via, "up", result.Up, "down", result.Down, "error", result.Err)
+	} else {
+		logger.Debug("player finished", "via", via, "up", result.Up, "down", result.Down)
+	}
 }
 
 // dialUpstream tries the host's own addresses first and the relay last.
