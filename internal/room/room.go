@@ -50,6 +50,11 @@ type Registry struct {
 	grace   time.Duration
 	now     func() time.Time
 	newCode func() (string, error)
+
+	// lookupCode and rememberCode make an auto-assigned code stick to the
+	// device that received it, so a reconnecting host keeps its address.
+	lookupCode   func(deviceID string) (string, bool)
+	rememberCode func(deviceID, code string)
 }
 
 // NewRegistry returns a registry that keeps dropped rooms alive for grace.
@@ -75,11 +80,19 @@ func (r *Registry) Create(deviceID, requestedCode, publicHost string, publicPort
 
 	code := requestedCode
 	if code == "" || code == "auto" {
-		assigned, err := r.assignCodeLocked()
-		if err != nil {
-			return Room{}, err
+		// Reuse the code this device had before. Without this every reconnect,
+		// and every relay restart, would hand out a new address.
+		code = r.rememberedCodeLocked(deviceID)
+		if code == "" {
+			assigned, err := r.assignCodeLocked()
+			if err != nil {
+				return Room{}, err
+			}
+			code = assigned
+			if r.rememberCode != nil {
+				r.rememberCode(deviceID, code)
+			}
 		}
-		code = assigned
 	} else {
 		normalized, err := auth.NormalizeRoomCode(code)
 		if err != nil {
@@ -113,6 +126,31 @@ func (r *Registry) Create(deviceID, requestedCode, publicHost string, publicPort
 	}
 	r.rooms[code] = created
 	return *created, nil
+}
+
+// SetCodeAssigner supplies the storage that keeps auto-assigned codes stable.
+// Passing nil callbacks falls back to a fresh code per room.
+func (r *Registry) SetCodeAssigner(lookup func(deviceID string) (string, bool), remember func(deviceID, code string)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lookupCode = lookup
+	r.rememberCode = remember
+}
+
+// rememberedCodeLocked returns the code previously given to deviceID, if it is
+// still usable.
+func (r *Registry) rememberedCodeLocked(deviceID string) string {
+	if r.lookupCode == nil {
+		return ""
+	}
+	known, ok := r.lookupCode(deviceID)
+	if !ok || known == "" {
+		return ""
+	}
+	if existing, taken := r.rooms[known]; taken && existing.DeviceID != deviceID {
+		return ""
+	}
+	return known
 }
 
 func (r *Registry) assignCodeLocked() (string, error) {

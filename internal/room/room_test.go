@@ -71,6 +71,66 @@ func TestCreateIsIdempotentForSameDevice(t *testing.T) {
 	}
 }
 
+// The bug this guards: an auto-assigned code used to be regenerated on every
+// reconnect, so the host's address changed under the players' feet.
+func TestAutoCodeIsStablePerDevice(t *testing.T) {
+	registry := NewRegistry(time.Minute)
+
+	remembered := map[string]string{}
+	registry.SetCodeAssigner(
+		func(deviceID string) (string, bool) { code, ok := remembered[deviceID]; return code, ok },
+		func(deviceID, code string) { remembered[deviceID] = code },
+	)
+
+	first, err := registry.Create("device-a", "auto", "a.example.com", 25565)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Simulate a reconnect after the room was reaped: the code must come back.
+	registry.Remove(first.Code)
+	second, err := registry.Create("device-a", "auto", "a.example.com", 25565)
+	if err != nil {
+		t.Fatalf("create again: %v", err)
+	}
+	if second.Code != first.Code {
+		t.Fatalf("code changed from %q to %q", first.Code, second.Code)
+	}
+
+	// A different device still gets its own code.
+	other, err := registry.Create("device-b", "auto", "b.example.com", 25565)
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	if other.Code == first.Code {
+		t.Fatalf("two devices share the code %q", other.Code)
+	}
+}
+
+func TestRememberedCodeIsNotStolen(t *testing.T) {
+	registry := NewRegistry(time.Minute)
+
+	memory := map[string]string{"device-a": "aaaaaa"}
+	registry.SetCodeAssigner(
+		func(deviceID string) (string, bool) { code, ok := memory[deviceID]; return code, ok },
+		func(deviceID, code string) { memory[deviceID] = code },
+	)
+
+	// Someone else owns the remembered code; device-a must get a new one
+	// instead of taking it.
+	if _, err := registry.Create("device-b", "aaaaaa", "b.example.com", 25565); err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+
+	created, err := registry.Create("device-a", "auto", "a.example.com", 25565)
+	if err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	if created.Code == "aaaaaa" {
+		t.Fatal("a remembered code taken by someone else was reused")
+	}
+}
+
 func TestCreateRejectsCodeOfAnotherDevice(t *testing.T) {
 	reg, _ := newTestRegistry(t)
 

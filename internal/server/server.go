@@ -58,7 +58,7 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{
+	server := &Server{
 		cfg:     cfg,
 		rooms:   room.NewRegistry(cfg.GracePeriod.Std()),
 		plane:   newDataplane(),
@@ -75,6 +75,11 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 			CheckOrigin: func(*http.Request) bool { return true },
 		},
 	}
+
+	// Codes stay stable for the life of the process; SetStateFile makes them
+	// survive a restart too.
+	server.rooms.SetCodeAssigner(server.usage.roomFor, server.usage.rememberRoom)
+	return server
 }
 
 // RoomLookup is what a joining player needs to know: where the host can be
@@ -141,9 +146,11 @@ func (s *Server) credential(code string) (config.Token, bool) {
 	return credential, ok
 }
 
-// SetStateFile makes credential usage survive a restart. Call it before Run.
+// SetStateFile makes credential usage and room codes survive a restart. Call it
+// before Run.
 func (s *Server) SetStateFile(path string) {
 	s.usage = newUsageStore(path)
+	s.rooms.SetCodeAssigner(s.usage.roomFor, s.usage.rememberRoom)
 }
 
 // Handler returns the HTTP routes of the relay.

@@ -14,6 +14,9 @@ import (
 type usageState struct {
 	Version int                 `json:"version"`
 	Used    map[string][]string `json:"used"`
+	// Rooms maps a device id to the room code it was given, so the same host
+	// keeps its address across reconnects and relay restarts.
+	Rooms map[string]string `json:"rooms,omitempty"`
 }
 
 // usageStore remembers the devices that registered with each credential.
@@ -24,7 +27,7 @@ type usageStore struct {
 }
 
 func newUsageStore(path string) *usageStore {
-	store := &usageStore{path: path, state: usageState{Version: 1, Used: map[string][]string{}}}
+	store := &usageStore{path: path, state: usageState{Version: 1, Used: map[string][]string{}, Rooms: map[string]string{}}}
 	if path != "" {
 		store.load()
 	}
@@ -48,6 +51,9 @@ func (u *usageStore) load() {
 	}
 	if loaded.Used != nil {
 		u.state.Used = loaded.Used
+	}
+	if loaded.Rooms != nil {
+		u.state.Rooms = loaded.Rooms
 	}
 }
 
@@ -75,6 +81,29 @@ func (u *usageStore) remember(code, deviceID string) error {
 	}
 	u.state.Used[code] = append(u.state.Used[code], deviceID)
 	return u.persistLocked()
+}
+
+// roomFor returns the room code this device was given before.
+func (u *usageStore) roomFor(deviceID string) (string, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	code, ok := u.state.Rooms[deviceID]
+	return code, ok && code != ""
+}
+
+// rememberRoom records the code handed to a device.
+func (u *usageStore) rememberRoom(deviceID, code string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	if u.state.Rooms == nil {
+		u.state.Rooms = map[string]string{}
+	}
+	if u.state.Rooms[deviceID] == code {
+		return
+	}
+	u.state.Rooms[deviceID] = code
+	_ = u.persistLocked()
 }
 
 // count reports how many devices used code.

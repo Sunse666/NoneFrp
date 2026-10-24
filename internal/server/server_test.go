@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -321,6 +322,79 @@ func TestIgnoresUnknownMessageTypes(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("room disappeared, rooms = %d", srv.rooms.Len())
+}
+
+// A host that drops offline, or a relay that restarts, must not change the
+// address players already saved.
+func TestRoomCodeSurvivesAReconnect(t *testing.T) {
+	srv, ts := newAuthTestServer(t, map[string]config.Token{testToken: {Note: "test host"}})
+
+	first, _, err := dial(t, ts, testToken)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	writeMessage(t, first, protocol.TypeRegister, protocol.Register{DeviceID: "dev-1", LocalPort: 25565})
+	env := readMessage(t, first)
+	if env.Type != protocol.TypeRegistered {
+		t.Fatalf("register: %s", env.Type)
+	}
+	created, err := protocol.As[protocol.Registered](env)
+	if err != nil {
+		t.Fatalf("as: %v", err)
+	}
+	_ = first.Close()
+
+	// Simulate the grace period running out.
+	srv.rooms.Remove(created.RoomCode)
+
+	again, _, err := dial(t, ts, testToken)
+	if err != nil {
+		t.Fatalf("dial again: %v", err)
+	}
+	defer func() { _ = again.Close() }()
+	writeMessage(t, again, protocol.TypeRegister, protocol.Register{DeviceID: "dev-1", LocalPort: 25565})
+	env = readMessage(t, again)
+	reconnected, err := protocol.As[protocol.Registered](env)
+	if err != nil {
+		t.Fatalf("as: %v", err)
+	}
+	if reconnected.RoomCode != created.RoomCode {
+		t.Fatalf("the room code changed from %q to %q", created.RoomCode, reconnected.RoomCode)
+	}
+}
+
+func TestRoomCodeSurvivesARelayRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+
+	first := New(config.Server{
+		DomainSuffix: "mc.example.com",
+		PublicPort:   25565,
+		GracePeriod:  config.Duration(time.Minute),
+		Tokens:       map[string]config.Token{testToken: {Note: "test host"}},
+	}, slog.New(slog.DiscardHandler))
+	first.SetStateFile(statePath)
+
+	created, err := first.rooms.Create("dev-1", "auto", "a.example.com", 25565)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// A fresh server, as after a restart, reading the same state file.
+	second := New(config.Server{
+		DomainSuffix: "mc.example.com",
+		PublicPort:   25565,
+		GracePeriod:  config.Duration(time.Minute),
+		Tokens:       map[string]config.Token{testToken: {Note: "test host"}},
+	}, slog.New(slog.DiscardHandler))
+	second.SetStateFile(statePath)
+
+	recreated, err := second.rooms.Create("dev-1", "auto", "a.example.com", 25565)
+	if err != nil {
+		t.Fatalf("create after restart: %v", err)
+	}
+	if recreated.Code != created.Code {
+		t.Fatalf("the room code changed after a restart from %q to %q", created.Code, recreated.Code)
+	}
 }
 
 func TestRoomLookupPublishesEndpoints(t *testing.T) {
