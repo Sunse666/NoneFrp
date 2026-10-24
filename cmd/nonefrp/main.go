@@ -105,8 +105,27 @@ func runServer(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(cfg, newLogger(*debug))
+	logger := newLogger(*debug)
+	srv := server.New(cfg, logger)
 	srv.SetStateFile(filepath.Join(filepath.Dir(*configPath), "state.json"))
+
+	// SIGHUP re-reads the credential table, so issuing an invite does not
+	// require a restart that disconnects every host.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	go func() {
+		for range hup {
+			reloaded, err := config.LoadServer(*configPath)
+			if err != nil {
+				logger.Warn("reload failed, keeping the previous credentials", "error", err)
+				continue
+			}
+			srv.ReloadTokens(reloaded.Tokens)
+			logger.Info("credentials reloaded", "tokens", len(reloaded.Tokens))
+		}
+	}()
+
 	return srv.Run(ctx)
 }
 

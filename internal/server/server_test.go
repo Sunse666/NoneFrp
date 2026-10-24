@@ -128,6 +128,42 @@ func TestInviteIsBoundToOneDevice(t *testing.T) {
 	}
 }
 
+// SIGHUP reloads the credential table: a newly issued code works and a revoked
+// one stops working, without restarting anything.
+func TestReloadTokens(t *testing.T) {
+	srv, ts := newAuthTestServer(t, map[string]config.Token{
+		"JOIN-OLD11111": {Note: "the old one"},
+	})
+
+	conn, _, err := dial(t, ts, "JOIN-OLD11111")
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	_ = conn.Close()
+
+	srv.ReloadTokens(map[string]config.Token{
+		"JOIN-NEW22222": {Note: "the new one"},
+	})
+
+	revoked, resp, err := dial(t, ts, "JOIN-OLD11111")
+	if err == nil {
+		_ = revoked.Close()
+		t.Fatal("a revoked credential still connected")
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %v, want 401", resp)
+	}
+
+	fresh, _, err := dial(t, ts, "JOIN-NEW22222")
+	if err != nil {
+		t.Fatalf("dial with the new credential: %v", err)
+	}
+	defer func() { _ = fresh.Close() }()
+	if env := register(t, fresh, "device-a"); env.Type != protocol.TypeRegistered {
+		t.Fatalf("the new credential was rejected: %s", env.Type)
+	}
+}
+
 func TestExpiredInviteIsRejected(t *testing.T) {
 	_, ts := newAuthTestServer(t, map[string]config.Token{
 		"JOIN-EEEE3333": {Expires: time.Now().Add(-time.Minute)},

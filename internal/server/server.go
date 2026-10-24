@@ -37,11 +37,14 @@ var ErrServerClosed = errors.New("relay server closed")
 
 // Server is the relay control-plane server.
 type Server struct {
-	cfg            config.Server
-	rooms          *room.Registry
-	plane          *dataplane
-	limiter        *ipLimiter
-	usage          *usageStore
+	cfg     config.Server
+	rooms   *room.Registry
+	plane   *dataplane
+	limiter *ipLimiter
+	usage   *usageStore
+
+	tokensMu       sync.RWMutex
+	tokens         map[string]config.Token
 	log            *slog.Logger
 	upgrader       websocket.Upgrader
 	publicListener net.Listener
@@ -58,6 +61,7 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 		plane:   newDataplane(),
 		limiter: newIPLimiter(cfg.Limits.ConnRatePerIP),
 		usage:   newUsageStore(""),
+		tokens:  cfg.Tokens,
 		log:     logger,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -67,6 +71,23 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 			CheckOrigin: func(*http.Request) bool { return true },
 		},
 	}
+}
+
+// ReloadTokens swaps the credential table without dropping connections. It is
+// what SIGHUP does: adding an invite no longer needs a restart that kicks every
+// host offline for a second.
+func (s *Server) ReloadTokens(tokens map[string]config.Token) {
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	s.tokens = tokens
+}
+
+// credential returns the credential for code.
+func (s *Server) credential(code string) (config.Token, bool) {
+	s.tokensMu.RLock()
+	defer s.tokensMu.RUnlock()
+	credential, ok := s.tokens[code]
+	return credential, ok
 }
 
 // SetStateFile makes credential usage survive a restart. Call it before Run.
@@ -221,7 +242,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The credential may be an invite with a device cap or an expiry.
-	credential := s.cfg.Tokens[token]
+	credential, _ := s.credential(token)
 	if err := credential.Check(reg.DeviceID, s.usage.devices(token), time.Now()); err != nil {
 		code := protocol.ErrUnauthorized
 		switch {
@@ -316,7 +337,7 @@ func (s *Server) answerProbe(writer *peer, token string, env protocol.Envelope, 
 		return
 	}
 
-	credential := s.cfg.Tokens[token]
+	credential, _ := s.credential(token)
 	if err := credential.Check(probe.DeviceID, s.usage.devices(token), time.Now()); err != nil {
 		code := protocol.ErrUnauthorized
 		switch {
@@ -338,7 +359,7 @@ func (s *Server) authorized(token string) bool {
 	if token == "" {
 		return false
 	}
-	_, ok := s.cfg.Tokens[token]
+	_, ok := s.credential(token)
 	return ok
 }
 
