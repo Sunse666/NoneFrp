@@ -42,6 +42,25 @@ type Target struct {
 	RelayAddress string   `json:"relay_address"`
 }
 
+// NormalizeRoom turns whatever a player pasted into a room code. People are
+// told "7fcrfu.mc.example.com:25565", so accepting that whole thing saves them
+// from picking the first label out of it by hand.
+func NormalizeRoom(raw string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+
+	if index := strings.LastIndex(trimmed, "://"); index >= 0 {
+		trimmed = trimmed[index+3:]
+	}
+	if host, _, err := net.SplitHostPort(trimmed); err == nil {
+		trimmed = host
+	}
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	if index := strings.Index(trimmed, "."); index >= 0 {
+		trimmed = trimmed[:index]
+	}
+	return trimmed
+}
+
 // Options configures Serve.
 type Options struct {
 	// Relay is the relay hostname, with or without a scheme.

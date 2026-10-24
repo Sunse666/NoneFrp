@@ -263,7 +263,7 @@ func runServerLink(args []string) error {
 func runJoin(args []string) error {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	relay := fs.String("relay", "", "relay hostname, for example relay.example.com")
-	room := fs.String("room", "", "room code to follow")
+	room := fs.String("room", "", "room code, or the full room address")
 	listen := fs.String("listen", "127.0.0.1:25565", "local address Minecraft connects to")
 	debug := fs.Bool("debug", false, "log every connection")
 	if err := fs.Parse(args); err != nil {
@@ -271,6 +271,11 @@ func runJoin(args []string) error {
 	}
 	if *relay == "" || *room == "" {
 		return fmt.Errorf("both -relay and -room are required")
+	}
+	// Accept the full address as well as the bare code.
+	*room = join.NormalizeRoom(*room)
+	if *room == "" {
+		return fmt.Errorf("-room does not contain a room code")
 	}
 
 	logger := newLogger(*debug)

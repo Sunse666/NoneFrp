@@ -8,7 +8,7 @@ rem 3. double click, type the room code, leave the window open while playing
 
 set RELAY=relay.example.com
 
-set /p ROOM=Room code: 
+set /p ROOM=Room code or address (e.g. 7fcrfu.mc.example.com:25565): 
 if "%ROOM%"=="" goto :eof
 
 "%~dp0NoneFrp-windows-amd64-console.exe" join -relay "%RELAY%" -room "%ROOM%" -listen 127.0.0.1:25565
