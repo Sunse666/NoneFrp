@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Sunse666/NoneFrp/internal/auth"
 	"github.com/Sunse666/NoneFrp/internal/config"
@@ -73,6 +74,8 @@ func runServer(args []string) error {
 			return runServerToken(args[1:])
 		case "link":
 			return runServerLink(args[1:])
+		case "invite":
+			return runServerInvite(args[1:])
 		}
 	}
 
@@ -152,12 +155,10 @@ func runServerToken(args []string) error {
 			codes = append(codes, code)
 		}
 		sort.Strings(codes)
-		for _, code := range codes {
-			token := cfg.Tokens[code]
-			fmt.Printf("%s\t%s\n", code, token.Usage(0))
-			if token.Note != "" {
-				fmt.Printf("\t%s\n", token.Note)
-			}
+		counts := server.LoadUsage(filepath.Join(filepath.Dir(*configPath), "state.json"))
+		for _, code := range cfg.SortedCodes() {
+			credential := cfg.Tokens[code]
+			fmt.Printf("%s  %-38s %s\n", code, credential.Usage(counts[code]), credential.Note)
 		}
 		return nil
 
@@ -222,6 +223,46 @@ func runServerLink(args []string) error {
 		return err
 	}
 	fmt.Println(built)
+	return nil
+}
+
+func runServerInvite(args []string) error {
+	fs := flag.NewFlagSet("server invite", flag.ContinueOnError)
+	configPath := fs.String("config", "server.yaml", "path to the server configuration file")
+	note := fs.String("note", "", "who the invite is for")
+	once := fs.Bool("once", false, "allow a single device")
+	devices := fs.Int("devices", 0, "how many devices may use it, 0 means unlimited")
+	days := fs.Int("days", 0, "days until it expires, 0 means never")
+	if err := fs.Parse(args); err != nil {
+		return errUsage
+	}
+	if *once && *devices > 0 {
+		return fmt.Errorf("use either -once or -devices, not both")
+	}
+
+	credential := config.Token{Note: *note}
+	switch {
+	case *once:
+		credential.MaxDevices = 1
+	case *devices > 0:
+		credential.MaxDevices = *devices
+	}
+	if *days > 0 {
+		credential.Expires = time.Now().AddDate(0, 0, *days).Truncate(time.Second)
+	}
+
+	code, err := auth.GenerateInvite()
+	if err != nil {
+		return err
+	}
+	if err := auth.PutCredential(*configPath, code, credential); err != nil {
+		return err
+	}
+
+	fmt.Printf("invite:  %s\n", code)
+	fmt.Printf("policy:  %s\n", credential.Usage(0))
+	fmt.Printf("written: %s\n", *configPath)
+	fmt.Printf("apply:   restart the relay to accept it\n")
 	return nil
 }
 
@@ -364,6 +405,7 @@ Commands:
   server token new    issue an access token and store it in the config
   server token ls     list issued access tokens
   server link         print a join link for a token
+  server invite       issue an invite code, optionally single device or expiring
   client              run the host agent
   version             print version information
   help                print this message

@@ -37,6 +37,18 @@ func GenerateToken() (string, error) {
 	return TokenPrefix + body, nil
 }
 
+// InvitePrefix marks a credential handed out as an invitation.
+const InvitePrefix = "JOIN-"
+
+// GenerateInvite returns a new invite code such as "JOIN-3X8P2R9T".
+func GenerateInvite() (string, error) {
+	body, err := randomString(tokenAlphabet, TokenLength)
+	if err != nil {
+		return "", fmt.Errorf("generate invite: %w", err)
+	}
+	return InvitePrefix + body, nil
+}
+
 // GenerateRoomCode returns a new room code such as "a1b2c3".
 func GenerateRoomCode() (string, error) {
 	code, err := randomString(roomAlphabet, RoomCodeLength)

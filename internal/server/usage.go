@@ -106,6 +106,25 @@ func (u *usageStore) persistLocked() error {
 	return nil
 }
 
+// LoadUsage reports how many devices used each credential. A missing or damaged
+// file yields an empty map: a listing is not worth failing over.
+func LoadUsage(path string) map[string]int {
+	counts := map[string]int{}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return counts
+	}
+	var state usageState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return counts
+	}
+	for code, devices := range state.Used {
+		counts[code] = len(devices)
+	}
+	return counts
+}
+
 // stateFilePath returns the state file next to a configuration file.
 func stateFilePath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "state.json")
