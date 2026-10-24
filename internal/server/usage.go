@@ -125,6 +125,24 @@ func LoadUsage(path string) map[string]int {
 	return counts
 }
 
+// LoadUsageDevices reports the devices recorded for each credential.
+func LoadUsageDevices(path string) map[string][]string {
+	devices := map[string][]string{}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return devices
+	}
+	var state usageState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return devices
+	}
+	for code, known := range state.Used {
+		devices[code] = append([]string(nil), known...)
+	}
+	return devices
+}
+
 // stateFilePath returns the state file next to a configuration file.
 func stateFilePath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "state.json")

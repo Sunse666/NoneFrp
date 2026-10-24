@@ -40,6 +40,9 @@ func main() {
 			os.Exit(2)
 		}
 		fmt.Fprintf(os.Stderr, "nonefrp: %v\n", err)
+		// A windowless build has no console to print to: keep a trace next to
+		// the executable so a failed start is still diagnosable.
+		recordFatal(err)
 		os.Exit(1)
 	}
 }
@@ -157,6 +160,7 @@ func runServerToken(args []string) error {
 	case "ls":
 		fs := flag.NewFlagSet("server token ls", flag.ContinueOnError)
 		configPath := fs.String("config", "server.yaml", "path to the server configuration file")
+		verbose := fs.Bool("verbose", false, "list the devices that used each credential")
 		if err := fs.Parse(args[1:]); err != nil {
 			return errUsage
 		}
@@ -174,10 +178,18 @@ func runServerToken(args []string) error {
 			codes = append(codes, code)
 		}
 		sort.Strings(codes)
-		counts := server.LoadUsage(filepath.Join(filepath.Dir(*configPath), "state.json"))
+		statePath := filepath.Join(filepath.Dir(*configPath), "state.json")
+		counts := server.LoadUsage(statePath)
+		devices := server.LoadUsageDevices(statePath)
+
 		for _, code := range cfg.SortedCodes() {
 			credential := cfg.Tokens[code]
 			fmt.Printf("%s  %-38s %s\n", code, credential.Usage(counts[code]), credential.Note)
+			if *verbose {
+				for _, device := range devices[code] {
+					fmt.Printf("    device %s\n", device)
+				}
+			}
 		}
 		return nil
 
@@ -383,6 +395,24 @@ func runClient(args []string) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+// recordFatal appends a startup failure to startup-error.log next to the
+// binary. It is best effort: a failure here must not mask the original error.
+func recordFatal(err error) {
+	executable, pathErr := os.Executable()
+	if pathErr != nil {
+		return
+	}
+	file, openErr := os.OpenFile(
+		filepath.Join(filepath.Dir(executable), "startup-error.log"),
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600,
+	)
+	if openErr != nil {
+		return
+	}
+	defer func() { _ = file.Close() }()
+	fmt.Fprintf(file, "%s %v\n", time.Now().Format(time.RFC3339), err)
 }
 
 // defaultClientConfigPath returns client.yaml next to the binary, so double

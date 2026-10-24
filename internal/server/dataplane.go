@@ -288,11 +288,13 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.plane.setDialer(roomCode, dialer)
+	s.stats.sessionOpen()
 	log := s.log.With("room", roomCode)
 	log.Info("data session established")
 
 	<-dialer.Done()
 
+	s.stats.sessionClosed()
 	s.plane.dropDialer(roomCode, dialer)
 	_ = dialer.Close()
 	log.Info("data session closed")
@@ -329,20 +331,27 @@ func (s *Server) handlePlayer(conn net.Conn) {
 	}
 	if _, ok := s.rooms.Get(roomCode); !ok {
 		log.Debug("rejecting player: unknown room", "host", handshake.ServerAddress)
+		s.stats.rejected("room_not_found")
 		s.rejectPlayer(conn, handshake, messageRoomNotFound)
 		return
 	}
 	dialer, ok := s.plane.waitDialer(roomCode, dialerWait)
 	if !ok {
 		log.Debug("rejecting player: room has no data session", "room", roomCode)
+		s.stats.rejected("host_offline")
 		s.rejectPlayer(conn, handshake, messageHostOffline)
 		return
 	}
 	isPlayer := handshake.NextState == mcproto.NextStateLogin
 	if !s.plane.acquire(roomCode, s.cfg.Limits, isPlayer) {
 		log.Warn("rejecting player: room is full", "room", roomCode, "login", isPlayer)
+		s.stats.rejected("room_full")
 		s.rejectPlayer(conn, handshake, messageRoomFull)
 		return
+	}
+	if isPlayer {
+		s.stats.playerJoined()
+		defer s.stats.playerLeft()
 	}
 	defer s.plane.release(roomCode, isPlayer)
 
@@ -392,6 +401,7 @@ func (s *Server) handlePlayer(conn net.Conn) {
 		options.Idle = proxy.LoginIdleTimeout
 	}
 	result := proxy.SpliceWith(conn, stream, options)
+	s.stats.transferred(result.Up, result.Down)
 	log.Debug("player connection finished",
 		"room", roomCode,
 		"up", result.Up,

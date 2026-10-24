@@ -45,6 +45,7 @@ type Server struct {
 
 	tokensMu       sync.RWMutex
 	tokens         map[string]config.Token
+	stats          *stats
 	log            *slog.Logger
 	upgrader       websocket.Upgrader
 	publicListener net.Listener
@@ -62,6 +63,7 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 		limiter: newIPLimiter(cfg.Limits.ConnRatePerIP),
 		usage:   newUsageStore(""),
 		tokens:  cfg.Tokens,
+		stats:   newStats(),
 		log:     logger,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -71,6 +73,17 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 			CheckOrigin: func(*http.Request) bool { return true },
 		},
 	}
+}
+
+// handleMetrics renders Prometheus text. It needs a credential because the
+// reverse proxy exposes the whole handler on the public hostname.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(bearerToken(r)) {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	s.stats.write(w, s.rooms.Snapshot())
 }
 
 // ReloadTokens swaps the credential table without dropping connections. It is
@@ -104,6 +117,7 @@ func (s *Server) Handler() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
@@ -278,6 +292,8 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		log.Warn("failed to confirm registration", "room", created.Code, "error", err)
 		return
 	}
+
+	s.stats.registered()
 
 	if err := s.usage.remember(token, reg.DeviceID); err != nil {
 		log.Warn("could not record credential usage", "error", err)

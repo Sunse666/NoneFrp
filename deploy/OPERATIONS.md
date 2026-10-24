@@ -58,9 +58,18 @@ systemctl status nonefrp          # 看状态
 systemctl restart nonefrp         # 改完配置后重启
 journalctl -u nonefrp -f          # 实时日志（看谁连进来、谁掉线）
 curl -s https://relay.example.com/readyz   # 健康检查，期望 ready
+
+# 只改了 tokens: 时用它，不断线
+kill -HUP $(systemctl show -p MainPID --value nonefrp)
+
+# 指标（需要凭证）
+curl -s -H "Authorization: Bearer NFRP-XXXX" https://relay.example.com/metrics
 ```
 
-改配置的固定流程：**改 `/opt/nonefrp/server.yaml` → `systemctl restart nonefrp` → `curl readyz`**。
+改配置分两种：
+
+- **加/删邀请码** → `kill -HUP`，在线房主不掉线
+- **改端口、域名、监听地址** → `systemctl restart nonefrp`，房主会断约 1 秒后自动重连
 
 ## 签发邀请码（给一个新朋友）
 
@@ -69,7 +78,7 @@ cd /opt/nonefrp
 ./nonefrp server invite --once --note "小明"        # 只允许一台设备
 #  invite:  JOIN-3X8P2R9T
 #  policy:  0/1 devices, never expires
-systemctl restart nonefrp
+kill -HUP $(systemctl show -p MainPID --value nonefrp)   # 不用重启
 ```
 
 房主在界面里填两个东西：中继地址（`relay.example.com`）+ 邀请码（`JOIN-3X8P2R9T`），点「测试连接」确认，再点「保存并重连」。

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -319,6 +320,64 @@ func TestIgnoresUnknownMessageTypes(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("room disappeared, rooms = %d", srv.rooms.Len())
+}
+
+func TestMetricsNeedACredential(t *testing.T) {
+	_, ts := newAuthTestServer(t, map[string]config.Token{testToken: {Note: "test host"}})
+
+	resp, err := http.Get(ts.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestMetricsReportState(t *testing.T) {
+	srv, ts := newAuthTestServer(t, map[string]config.Token{testToken: {Note: "test host"}})
+
+	conn, _, err := dial(t, ts, testToken)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if env := register(t, conn, "dev-1"); env.Type != protocol.TypeRegistered {
+		t.Fatalf("register: %s", env.Type)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"nonefrp_rooms{state=\"active\"} 1",
+		"nonefrp_registrations_total 1",
+		"nonefrp_players 0",
+		"nonefrp_bytes_total{direction=\"up\"}",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, text)
+		}
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("content type = %q", resp.Header.Get("Content-Type"))
+	}
+	_ = srv
 }
 
 func TestRegisterRejectsConflictingRoomCode(t *testing.T) {

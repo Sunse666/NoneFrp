@@ -180,6 +180,8 @@ ufw allow 25565/tcp
 
 把 `NoneFrp-windows-amd64.exe` 发给房主，双击。浏览器会打开一个本地页面，填中继地址和邀请码即可。
 
+> 无窗口版：双击不会弹黑框，日志写在 exe 旁边的 `nonefrp.log`。需要现场看日志时用 `NoneFrp-windows-amd64-console.exe`，行为和它完全一样，只是多一个控制台窗口。
+
 配置写在 **exe 同目录**的 `client.yaml`，日志写在同目录的 `nonefrp.log`。
 
 命令行等价写法：
@@ -233,10 +235,12 @@ ui:
 ```bash
 cd /opt/nonefrp
 
-./nonefrp server invite --once --note frp1""      # 一台设备
+./nonefrp server invite --once --note "frp1"       # 一台设备
 ./nonefrp server invite --devices 5 --days 30     # 五台设备，30 天
 ./nonefrp server invite --note "frp2"             # 永久、不限设备
-systemctl restart nonefrp                         # 新码要重启才生效
+
+# 让中继读到新码。SIGHUP 不会断开在线房主，比 restart 好
+kill -HUP $(systemctl show -p MainPID --value nonefrp)
 ```
 
 - 输出形如 `JOIN-3X8P2R9T`，把它和 `relay.example.com` 一起发给房主
@@ -287,7 +291,18 @@ systemctl status nonefrp           # 状态
 systemctl restart nonefrp          # 改完配置
 journalctl -u nonefrp -f           # 实时日志
 curl -s https://relay.example.com/readyz    # 健康检查，期望 ready
+kill -HUP $(systemctl show -p MainPID --value nonefrp)   # 重新读邀请码，不断线
 ```
+
+加了邀请码之后**不需要重启**，发一个 SIGHUP 就行：中继重新读 `server.yaml` 的 `tokens:`，在线房主不受影响。只有改端口、域名、监听地址这类字段才需要 `systemctl restart`。
+
+### 指标
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" https://relay.example.com/metrics
+```
+
+`/metrics` 是 Prometheus 文本格式，带凭证才能读（因为它和反代共用同一个 hostname）。输出房间数、在线玩家、数据会话、注册总数、上下行字节、按原因分类的拒绝次数。
 
 健康检查命令行工具：
 
@@ -322,6 +337,7 @@ systemctl restart nonefrp
 | `https://relay.../readyz` 返回 502 | 中继没起来，`systemctl status nonefrp`；多半是 `server.yaml` 写坏了 |
 | 玩家能连但一直卡登录 | 服务器列表能刷新说明隧道通，问题在 Paper 侧 |
 | 「一次性邀请码用过了」 | 换了机器或删了 `device_id`；把该码的 `max_devices` 改成 2 救急 |
+| 双击无窗口版什么都没发生 | 看 exe 旁边的 `nonefrp.log`；启动就失败的话看 `startup-error.log` |
 
 服务器日志在 `journalctl`，房主日志在 exe 旁边的 `nonefrp.log`。加 `-debug` 能看到每条流的字节数和每个拒绝原因。
 
@@ -339,7 +355,8 @@ systemctl restart nonefrp
 
 | 文件 | 用途 |
 |---|---|
-| `dist/NoneFrp-windows-amd64.exe` | 房主端 |
+| `dist/NoneFrp-windows-amd64.exe` | 房主端（无窗口，双击用） |
+| `dist/NoneFrp-windows-amd64-console.exe` | 房主端（带控制台，调试用） |
 | `dist/nonefrp-linux-amd64` | 中继（amd64） |
 | `dist/nonefrp-linux-arm64` | 中继（树莓派等） |
 | `dist/nonefrp-darwin-arm64` | 房主端（Mac） |
