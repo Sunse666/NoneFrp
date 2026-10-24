@@ -8,10 +8,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -299,16 +301,55 @@ func runJoin(args []string) error {
 		fmt.Printf("host is offline; the relay will be used when it comes back\n")
 	}
 
-	fmt.Printf("listening on %s — in Minecraft add a server called \"localhost\"\n", *listen)
+	listener, address, err := listenLocal(*listen)
+	if err != nil {
+		return fmt.Errorf("cannot listen on %s: %w", *listen, err)
+	}
+	if address != *listen {
+		fmt.Printf("port %s is busy (a Minecraft server may already run on this machine); using %s instead\n",
+			*listen, address)
+	}
+
+	name := "localhost"
+	if _, port, splitErr := net.SplitHostPort(address); splitErr == nil && port != "25565" {
+		name = "localhost:" + port
+	}
+	fmt.Printf("listening on %s — in Minecraft add a server called \"%s\"\n", address, name)
 	fmt.Println("connections try the host directly first and fall back to the relay.")
 	fmt.Println("keep this window open while playing; close it to leave the room.")
 
-	err := join.Serve(ctx, join.Options{Relay: *relay, Room: *room, Listen: *listen}, logger)
+	err = join.ServeListener(ctx, listener, join.Options{Relay: *relay, Room: *room, Listen: address}, logger)
 	if err != nil {
 		return err
 	}
 	fmt.Println("disconnected.")
 	return nil
+}
+
+// listenLocal binds address, or the next free port when it is taken. A player
+// testing on the same machine as the Minecraft server will find 25565 busy.
+func listenLocal(address string) (net.Listener, string, error) {
+	listener, err := net.Listen("tcp", address)
+	if err == nil {
+		return listener, address, nil
+	}
+
+	host, portText, splitErr := net.SplitHostPort(address)
+	if splitErr != nil {
+		return nil, "", err
+	}
+	port, convErr := strconv.Atoi(portText)
+	if convErr != nil {
+		return nil, "", err
+	}
+
+	for offset := 1; offset <= 9; offset++ {
+		candidate := net.JoinHostPort(host, strconv.Itoa(port+offset))
+		if listener, dialErr := net.Listen("tcp", candidate); dialErr == nil {
+			return listener, candidate, nil
+		}
+	}
+	return nil, "", err
 }
 
 func runServerInvite(args []string) error {

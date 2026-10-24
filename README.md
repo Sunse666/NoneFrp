@@ -298,7 +298,9 @@ nonefrp join -relay relay.example.com -room a2b3c4
 
 玩家在 Minecraft 里填 `localhost` 就行，不用记房间域名，房主换网络也不受影响。
 
-包里带了 `join-room.cmd`：改一行 `RELAY=`，双击，粘贴房主发来的**整条房间地址**就行（`7fcrfu.mc.example.com:25565`），它会自己取出房间码。要配合 `NoneFrp-windows-amd64-console.exe` 使用（无窗口版看不到提示）。
+包里带了 `join-room.cmd`：改一行 `RELAY=`（**整行替换**成中继域名，比如 `relay.example.com`，别把示例里的 `.com` 留下），双击，粘贴房主发来的**整条房间地址**就行（`7fcrfu.mc.example.com:25565`），它会自己取出房间码。
+
+本机 25565 被占用（比如房主自己在同一台机器上开服）时会自动换下一个可用端口，并在窗口里告诉你该填 `localhost:25566`。要配合 `NoneFrp-windows-amd64-console.exe` 使用（无窗口版看不到提示）。
 
 > 它不消耗邀请码、不需要 token：房间的直连地址本来就是公开信息。
 
