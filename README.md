@@ -367,7 +367,9 @@ systemctl restart nonefrp
 | 房主界面未连接 + 连接超时 | 中继地址写错、中继没跑、或 443 没放行 |
 | 房主一直 `relay attempt failed` | nginx 少了两行 `Upgrade` / `Connection` |
 | `https://relay.../readyz` 返回 502 | 中继没起来，`systemctl status nonefrp`；多半是 `server.yaml` 写坏了 |
+| 玩家看到「无法连接到服务器」，房主却显示已连接 | 开了「真实 IP 透传」（PROXY 协议）但服务端是原版 Paper——原版会直接断开。到设置里取消勾选 |
 | 玩家能连但一直卡登录 | 服务器列表能刷新说明隧道通，问题在 Paper 侧 |
+| 房间码每次重启都变 | 中继低于 0.3.4；升级即可，或在设置里把房间码填死 |
 | 「一次性邀请码用过了」 | 换了机器或删了 `device_id`；把该码的 `max_devices` 改成 2 救急 |
 | 双击无窗口版什么都没发生 | 看 exe 旁边的 `nonefrp.log`；启动就失败的话看 `startup-error.log` |
 
@@ -380,7 +382,7 @@ systemctl restart nonefrp
 需要 Go 1.26+。
 
 ```powershell
-.\build.ps1 -Version 0.2.0
+.\build.ps1 -Version 0.3.9
 ```
 
 产物：

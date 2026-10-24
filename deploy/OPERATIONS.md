@@ -218,7 +218,7 @@ a2b3c4.mc.example.com:25565
 | 中继服务器 | 连的是哪台中继（`wss://relay.example.com`） |
 | 房间码 | 玩家地址的第一段（`a2b3c4`） |
 | 本地端口 | 你 Paper 的端口，默认 25565 |
-| 真实 IP 透传 | 开启后 Paper 能看到玩家真实 IP（需要 Paper 端也配） |
+| 真实 IP 透传 | 开启后 Paper 能看到玩家真实 IP，**但服务端必须支持 PROXY 协议**（原版 Paper 会直接断开玩家） |
 | 直连地址 | 同一局域网 / IPv6 玩家可以不经过中继直接连 |
 
 ## 开机自启（可选）
@@ -239,8 +239,9 @@ schtasks /create /tn "NoneFrp" /tr ""D:\IO\Go_obj\NoneFrp\dist\NoneFrp-windows-a
 | 界面显示「未连接」，红字提示 401 | token 不对，或中继端删掉了这个 token |
 | 界面显示「未连接」+ 连接被拒 | 中继地址写错 / 中继没跑 |
 | 界面「本地服务器」显示**未监听** | Minecraft 服务端没启动，或端口和配置不一致 |
-| 玩家进不来，但界面显示已连接 | 先看上一行的「本地服务器」状态 |
-| 房间码一直在变 | `client.yaml` 或数据目录换了位置，device id 跟着变了 |
+| 玩家进不来，但界面显示已连接 | 先看「本地服务器」；再看**真实 IP 透传**是不是被打开了（见下） |
+| 玩家看到「无法连接到服务器」 | 常见于 PROXY 协议或防火墙，见下面两段 |
+| 房间码一直在变 | 中继低于 0.3.4，或 `device_id` 变了；建议把房间码填死 |
 
 **关于「真实 IP 透传」**：只有在服务端**支持 PROXY 协议**时才勾选（Velocity / BungeeCord 后面的后端，或装了对应插件的 Paper）。原版 Paper 看到 PROXY 头会直接断开，玩家表现为「无法连接到服务器」，而房主界面仍然显示已连接——这个组合特别容易误判。
 
@@ -256,10 +257,23 @@ schtasks /create /tn "NoneFrp" /tr ""D:\IO\Go_obj\NoneFrp\dist\NoneFrp-windows-a
 
 # 三、玩家
 
+## 直接填地址（默认）
+
 在 MC 里填，注意**端口不能省**：
 
 ```
 a2b3c4.mc.example.com:25565
+```
+
+## 用 join 小工具（可选，走得更快）
+
+包里带的 `join-room.cmd` 改一行 `RELAY=`（填中继域名，比如 `relay.example.com`），双击，粘贴房主发来的整条地址即可。它会在本机监听 `localhost`，每条连接**先试房主的 IPv6 / 公网直连**，连不上才走中继。玩家在 MC 里只要填 `localhost`。
+
+日志会写明每条连接走的是哪条路：
+
+```
+INFO msg="player connected" via="direct [2409:...]:25565"     ← 零中继流量
+INFO msg="player connected" via="relay a2b3c4....:25565"      ← 回落中继
 ```
 
 同一个局域网的人也可以用界面上的「直连地址」，延迟更低、不消耗中继流量。
