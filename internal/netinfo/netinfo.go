@@ -21,6 +21,9 @@ const (
 	// KindPublic is a globally routable address, reachable from the internet if
 	// nothing (router firewall, ISP) blocks it.
 	KindPublic Kind = "public"
+	// KindTailnet is a 100.64.0.0/10 address handed out by a mesh network such
+	// as Tailscale. It is only reachable by devices that joined that network.
+	KindTailnet Kind = "tailnet"
 )
 
 // Candidate is one address a player might connect to.
@@ -81,11 +84,24 @@ func Candidates() []Candidate {
 
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Kind != out[j].Kind {
-			return out[i].Kind == KindLAN
+			return rank(out[i].Kind) < rank(out[j].Kind)
 		}
 		return out[i].IP < out[j].IP
 	})
 	return out
+}
+
+// rank orders the kinds the way a host should read them: someone next to them
+// first, then the club network, then the open internet.
+func rank(kind Kind) int {
+	switch kind {
+	case KindLAN:
+		return 0
+	case KindTailnet:
+		return 1
+	default:
+		return 2
+	}
 }
 
 // dedupePrefixes keeps one IPv6 address per /64. Windows keeps a stable address
@@ -117,7 +133,7 @@ func dedupePrefixes(in []Candidate) []Candidate {
 // reachable by a player.
 var virtualInterfaceHints = []string{
 	"vpn", "tap", "tun", "virtual", "vmware", "hyper-v", "vethernet",
-	"docker", "tailscale", "zerotier", "radmin", "hamachi", "wireguard", "clash",
+	"docker", "radmin", "hamachi", "wireguard", "clash",
 }
 
 func isVirtualInterface(name string) bool {
@@ -137,6 +153,9 @@ func classify(ip net.IP) (Candidate, bool) {
 	}
 
 	if v4 := ip.To4(); v4 != nil {
+		if inTailnetRange(v4) {
+			return Candidate{IP: v4.String(), Kind: KindTailnet}, true
+		}
 		if ip.IsPrivate() {
 			return Candidate{IP: v4.String(), Kind: KindLAN}, true
 		}
@@ -154,6 +173,14 @@ func classify(ip net.IP) (Candidate, bool) {
 	return Candidate{IP: ip.String(), Kind: KindPublic}, true
 }
 
+// tailnetRange is 100.64.0.0/10, the carrier grade NAT space that mesh
+// networks such as Tailscale allocate from.
+var tailnetRange = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+func inTailnetRange(ip net.IP) bool {
+	return tailnetRange.Contains(ip)
+}
+
 // isTeredo reports whether ip is inside 2001:0::/32.
 func isTeredo(ip net.IP) bool {
 	return len(ip) == net.IPv6len && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x00 && ip[3] == 0x00
@@ -162,7 +189,10 @@ func isTeredo(ip net.IP) bool {
 // Describe renders a candidate for display, e.g. "[2409::1]:25565 (公网 IPv6)".
 func Describe(candidate Candidate, port int) string {
 	label := "局域网"
-	if candidate.Kind == KindPublic {
+	switch candidate.Kind {
+	case KindTailnet:
+		label = "社团网络，需装客户端"
+	case KindPublic:
 		if strings.Contains(candidate.IP, ":") {
 			label = "公网 IPv6"
 		} else {

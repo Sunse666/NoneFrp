@@ -138,13 +138,16 @@ func (s *Server) Start(ctx context.Context, addr string) (string, error) {
 
 // pageData is what the template renders.
 type pageData struct {
-	Base          string
-	CSRF          string
-	Configured    bool
-	Relay         string
-	Token         string
-	LocalPort     int
-	Direct        []string
+	Base       string
+	CSRF       string
+	Configured bool
+	Relay      string
+	Token      string
+	LocalPort  int
+	Direct     []string
+	// DirectTailnet holds addresses on a mesh network such as Tailscale, which
+	// only work for players who joined it.
+	DirectTailnet []string
 	RoomCode      string
 	ProxyProtocol bool
 	Editable      bool
@@ -178,7 +181,12 @@ func (s *Server) buildPage(r *http.Request) pageData {
 	data.ProxyProtocol = cfg.Local.ProxyProtocol
 
 	for _, candidate := range netinfo.Candidates() {
-		data.Direct = append(data.Direct, netinfo.Describe(candidate, cfg.Local.Port))
+		described := netinfo.Describe(candidate, cfg.Local.Port)
+		if candidate.Kind == netinfo.KindTailnet {
+			data.DirectTailnet = append(data.DirectTailnet, described)
+			continue
+		}
+		data.Direct = append(data.Direct, described)
 	}
 	return data
 }

@@ -15,6 +15,7 @@ func TestClassify(t *testing.T) {
 		{"10.1.2.3", KindLAN, true},
 		{"172.16.0.9", KindLAN, true},
 		{"8.8.8.8", KindPublic, true},
+		{"100.101.42.7", KindTailnet, true},
 		{"2409:8938:c72:7b00::1", KindPublic, true},
 		{"fdfd::1", "", false},
 		{"fe80::1", "", false},
@@ -53,6 +54,9 @@ func TestDescribe(t *testing.T) {
 	if got := Describe(Candidate{IP: "192.168.1.5", Kind: KindLAN}, 25565); got != "192.168.1.5:25565（局域网）" {
 		t.Fatalf("describe = %q", got)
 	}
+	if got := Describe(Candidate{IP: "100.101.42.7", Kind: KindTailnet}, 25565); got != "100.101.42.7:25565（社团网络，需装客户端）" {
+		t.Fatalf("describe = %q", got)
+	}
 	if got := Describe(Candidate{IP: "2409::1", Kind: KindPublic}, 25565); got != "[2409::1]:25565（公网 IPv6）" {
 		t.Fatalf("describe = %q", got)
 	}
@@ -60,8 +64,10 @@ func TestDescribe(t *testing.T) {
 
 func TestIsVirtualInterface(t *testing.T) {
 	cases := map[string]bool{
-		"Radmin VPN":                    true,
-		"Tailscale":                     true,
+		"Radmin VPN": true,
+		// A mesh adapter is no longer hidden: its 100.64/10 address is
+		// classified as a tailnet address instead.
+		"Tailscale":                     false,
 		"VMware Network Adapter VMnet8": true,
 		"vEthernet (WSL)":               true,
 		"以太网":                           false,

@@ -87,6 +87,16 @@ const indexHTML = `<!doctype html>
     <div class="error" id="localwarn" style="display:none"></div>
   </section>
 
+  {{if .DirectTailnet}}
+  <section class="card">
+    <div class="label">社团网络地址（P2P，不消耗中继流量）</div>
+    {{range .DirectTailnet}}<div class="row"><span class="k">·</span><span>{{.}}</span></div>{{end}}
+    <div class="muted" style="margin-top:8px">
+      只有装了客户端并加入社团网络的人能用这个地址。它走点对点直连，延迟最低，也不占用中继带宽。没加入的人仍然用上面的房间地址。
+    </div>
+  </section>
+  {{end}}
+
   {{if .Direct}}
   <section class="card">
     <div class="label">直连地址（不经过中继）</div>
