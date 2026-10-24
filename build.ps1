@@ -42,7 +42,7 @@ if (Test-Path $bundle) { Remove-Item -Recurse -Force $bundle }
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 
 Copy-Item "dist/nonefrp-linux-amd64" $bundle
-foreach ($name in @("setup.sh", "install.sh", "preflight.sh", "nonefrp.service", "nginx-relay.conf", "QUICKSTART.md", "OPERATIONS.md")) {
+foreach ($name in @("setup.sh", "install.sh", "preflight.sh", "nonefrp.service", "nginx-relay.conf", "QUICKSTART.md", "OPERATIONS.md", "HEADSCALE.md", "join-room.cmd")) {
     Copy-Item "deploy/$name" $bundle
 }
 

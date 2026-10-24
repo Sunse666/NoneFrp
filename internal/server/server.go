@@ -4,10 +4,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +77,42 @@ func New(cfg config.Server, logger *slog.Logger) *Server {
 	}
 }
 
+// RoomLookup is what a joining player needs to know: where the host can be
+// reached directly, and where the relay is as a fallback.
+type RoomLookup struct {
+	Code         string   `json:"code"`
+	Online       bool     `json:"online"`
+	Endpoints    []string `json:"endpoints"`
+	RelayAddress string   `json:"relay_address"`
+}
+
+// handleRoomLookup is deliberately unauthenticated: a player joining a room has
+// no credential, and the addresses it returns are public anyway.
+func (s *Server) handleRoomLookup(w http.ResponseWriter, r *http.Request) {
+	code := strings.ToLower(strings.TrimSpace(r.PathValue("code")))
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	tracked, ok := s.rooms.Get(code)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(RoomLookup{Code: code, Online: false})
+		return
+	}
+
+	endpoints := tracked.Endpoints
+	if endpoints == nil {
+		endpoints = []string{}
+	}
+	_ = json.NewEncoder(w).Encode(RoomLookup{
+		Code:         tracked.Code,
+		Online:       tracked.State == room.StateActive,
+		Endpoints:    endpoints,
+		RelayAddress: net.JoinHostPort(tracked.PublicHost, strconv.Itoa(tracked.PublicPort)),
+	})
+}
+
 // handleMetrics renders Prometheus text. It needs a credential because the
 // reverse proxy exposes the whole handler on the public hostname.
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	mux.HandleFunc("GET /v1/room/{code}", s.handleRoomLookup)
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
@@ -293,6 +332,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.rooms.SetEndpoints(created.Code, reg.Endpoints)
 	s.stats.registered()
 
 	if err := s.usage.remember(token, reg.DeviceID); err != nil {

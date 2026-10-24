@@ -18,6 +18,7 @@ import (
 
 	"github.com/Sunse666/NoneFrp/internal/auth"
 	"github.com/Sunse666/NoneFrp/internal/config"
+	"github.com/Sunse666/NoneFrp/internal/join"
 	"github.com/Sunse666/NoneFrp/internal/link"
 	"github.com/Sunse666/NoneFrp/internal/logging"
 	"github.com/Sunse666/NoneFrp/internal/server"
@@ -65,6 +66,8 @@ func run(args []string) error {
 		return runServer(rest)
 	case "client":
 		return runClient(rest)
+	case "join":
+		return runJoin(rest)
 	}
 	printUsage()
 	return fmt.Errorf("unknown subcommand %q", cmd)
@@ -254,6 +257,37 @@ func runServerLink(args []string) error {
 		return err
 	}
 	fmt.Println(built)
+	return nil
+}
+
+func runJoin(args []string) error {
+	fs := flag.NewFlagSet("join", flag.ContinueOnError)
+	relay := fs.String("relay", "", "relay hostname, for example relay.example.com")
+	room := fs.String("room", "", "room code to follow")
+	listen := fs.String("listen", "127.0.0.1:25565", "local address Minecraft connects to")
+	debug := fs.Bool("debug", false, "log every connection")
+	if err := fs.Parse(args); err != nil {
+		return errUsage
+	}
+	if *relay == "" || *room == "" {
+		return fmt.Errorf("both -relay and -room are required")
+	}
+
+	logger := newLogger(*debug)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	fmt.Printf("room %s via %s\n", *room, *relay)
+	fmt.Printf("listening on %s — in Minecraft add a server called \"localhost\"\n", *listen)
+	fmt.Println("connections try the host directly first and fall back to the relay.")
+	fmt.Println("keep this window open while playing; close it to leave the room.")
+
+	err := join.Serve(ctx, join.Options{Relay: *relay, Room: *room, Listen: *listen}, logger)
+	if err != nil {
+		return err
+	}
+	fmt.Println("disconnected.")
 	return nil
 }
 
@@ -456,6 +490,7 @@ Commands:
   server link         print a join link for a token
   server invite       issue an invite code, optionally single device or expiring
   client              run the host agent
+  join                join a room as a player, listening on localhost
   version             print version information
   help                print this message
 

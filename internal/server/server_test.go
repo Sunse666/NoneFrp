@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -320,6 +321,59 @@ func TestIgnoresUnknownMessageTypes(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("room disappeared, rooms = %d", srv.rooms.Len())
+}
+
+func TestRoomLookupPublishesEndpoints(t *testing.T) {
+	_, ts := newAuthTestServer(t, map[string]config.Token{testToken: {Note: "test host"}})
+
+	conn, _, err := dial(t, ts, testToken)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	writeMessage(t, conn, protocol.TypeRegister, protocol.Register{
+		DeviceID:  "dev-1",
+		LocalPort: 25565,
+		Endpoints: []string{"[2409::1]:25565", "192.168.1.9:25565"},
+	})
+	env := readMessage(t, conn)
+	if env.Type != protocol.TypeRegistered {
+		t.Fatalf("register: %s", env.Type)
+	}
+	registered, err := protocol.As[protocol.Registered](env)
+	if err != nil {
+		t.Fatalf("as: %v", err)
+	}
+
+	response, err := http.Get(ts.URL + "/v1/room/" + registered.RoomCode)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	var lookup RoomLookup
+	if err := json.NewDecoder(response.Body).Decode(&lookup); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !lookup.Online {
+		t.Fatal("the room should be reported online")
+	}
+	if len(lookup.Endpoints) != 2 || lookup.Endpoints[0] != "[2409::1]:25565" {
+		t.Fatalf("endpoints = %v", lookup.Endpoints)
+	}
+	if !strings.Contains(lookup.RelayAddress, ":") {
+		t.Fatalf("relay address = %q", lookup.RelayAddress)
+	}
+
+	missing, err := http.Get(ts.URL + "/v1/room/nosuch")
+	if err != nil {
+		t.Fatalf("get missing: %v", err)
+	}
+	defer func() { _ = missing.Body.Close() }()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", missing.StatusCode)
+	}
 }
 
 func TestMetricsNeedACredential(t *testing.T) {

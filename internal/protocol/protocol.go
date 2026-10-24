@@ -95,9 +95,12 @@ const (
 
 // Register is sent by an agent to claim a room.
 type Register struct {
-	DeviceID  string `json:"device_id"`
-	RoomCode  string `json:"room_code,omitempty"`
-	LocalPort int    `json:"local_port"`
+	DeviceID string `json:"device_id"`
+	RoomCode string `json:"room_code,omitempty"`
+	// Endpoints are addresses a player could dial to reach the local server
+	// without the relay, e.g. "[2409::1]:25565".
+	Endpoints []string `json:"endpoints,omitempty"`
+	LocalPort int      `json:"local_port"`
 }
 
 // Registered confirms room creation and tells the agent what to show players.

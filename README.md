@@ -282,6 +282,26 @@ kill -HUP $(systemctl show -p MainPID --value nonefrp)
 
 直连的额外好处：本地服务端天然能看到真实玩家 IP，也不需要开 `proxy_protocol`。
 
+## 玩家端（可选）
+
+以上都不需要玩家装东西。但如果想让玩家只填一次 `localhost`、并且自动走最快的路，可以发一个小工具：
+
+```powershell
+nonefrp join -relay relay.example.com -room a2b3c4
+```
+
+它做三件事：
+
+1. 向中继查这个房间现在能从哪几个地址连
+2. 在本机监听 `127.0.0.1:25565`
+3. 每条连接**先试房主的直连地址**（IPv6 / 公网 IPv4），连不上才走中继
+
+玩家在 Minecraft 里填 `localhost` 就行，不用记房间域名，房主换网络也不受影响。
+
+包里带了 `join-room.cmd`：改一行 `RELAY=`，双击，输入房间码。要配合 `NoneFrp-windows-amd64-console.exe` 使用（无窗口版看不到提示）。
+
+> 它不消耗邀请码、不需要 token：房间的直连地址本来就是公开信息。
+
 ## 社团网络（可选）
 
 如果玩的人固定、都愿意装一次客户端，可以再开一套点对点网络：**流量完全不经过中继，延迟最低**。界面上会多出一张「社团网络地址」卡片。

@@ -38,6 +38,9 @@ type Room struct {
 	UpdatedAt  time.Time
 	// ExpiresAt is when a room in the grace state is finally closed.
 	ExpiresAt time.Time
+	// Endpoints are the host's own addresses, usable by a player who can reach
+	// them without the relay.
+	Endpoints []string
 }
 
 // Registry is an in-memory room table. It is safe for concurrent use.
@@ -162,6 +165,20 @@ func (r *Registry) SetPublicHost(code, host string) {
 }
 
 // MarkGrace starts the grace period for a room whose agent disconnected.
+// SetEndpoints records the host's direct addresses, the ones a player may
+// reach without the relay.
+func (r *Registry) SetEndpoints(code string, endpoints []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tracked, ok := r.rooms[code]
+	if !ok {
+		return
+	}
+	tracked.Endpoints = append([]string(nil), endpoints...)
+	tracked.UpdatedAt = r.now()
+}
+
 func (r *Registry) MarkGrace(code string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -150,6 +150,7 @@ func (c *Client) connect(ctx context.Context, relay config.Relay) (bool, error) 
 		DeviceID:  c.deviceID,
 		RoomCode:  c.cfg.Room.Code,
 		LocalPort: c.cfg.Local.Port,
+		Endpoints: directEndpoints(c.cfg.Local.Port),
 	})
 	if err != nil {
 		return false, err
