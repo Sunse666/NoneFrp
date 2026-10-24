@@ -150,6 +150,7 @@ func (c *Client) serveStream(stream net.Conn, meta protocol.StreamMeta) {
 		hint := "the local server closed the connection without answering; check its logs"
 		if c.cfg.Local.ProxyProtocol {
 			hint += ", and note that proxy_protocol is on: a vanilla server rejects the PROXY header"
+			c.status.noteProblem("the local server did not answer (proxy_protocol is on; a vanilla server rejects that header)")
 		}
 		c.log.Warn("player connection produced no reply", "trace", meta.TraceID, "up", result.Up, "hint", hint)
 	}

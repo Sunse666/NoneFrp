@@ -71,6 +71,12 @@ func (s *statusStore) markDisconnected(err error) {
 	})
 }
 
+// noteProblem records something the host needs to see but that is not a
+// connection failure, such as a local server refusing every player.
+func (s *statusStore) noteProblem(message string) {
+	s.with(func(st *Status) { st.LastError = message })
+}
+
 func (s *statusStore) setLocal(ok bool) {
 	s.with(func(st *Status) { st.LocalOK = ok })
 }

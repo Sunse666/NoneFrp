@@ -106,7 +106,9 @@ func TestIndexIsReadOnlyWithoutSettings(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status = %d", code)
 	}
-	if strings.Contains(page, "保存并重连") {
+	// The page's script may mention the form; what must not be there is the
+	// form itself.
+	if strings.Contains(page, "<form") || strings.Contains(page, "name=\"csrf\"") {
 		t.Fatal("a read only interface must not render the settings form")
 	}
 }

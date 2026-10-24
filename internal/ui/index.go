@@ -166,8 +166,12 @@ const indexHTML = `<!doctype html>
       <div class="field">
         <label class="check">
           <input type="checkbox" name="proxy_protocol" {{if .ProxyProtocol}}checked{{end}}>
-          向本地服务器发送真实玩家 IP（需要服务端开启 proxy-protocol）
+          让本地服务端看到真实玩家 IP（PROXY 协议）
         </label>
+        <div class="muted" style="margin-top:6px">
+          只给支持 PROXY 协议的服务端用（Velocity / BungeeCord 后面的后端，或装了对应插件的 Paper）。
+          原版 Paper 打开这个选项后玩家会连不上，表现是「无法连接到服务器」。
+        </div>
       </div>
       <div class="actions">
         <button type="submit" class="primary">保存并重连</button>
@@ -198,6 +202,9 @@ const indexHTML = `<!doctype html>
   function describe(raw) {
     if (raw.indexOf('401') >= 0) {
       return '中继不认识这个邀请码：它可能已被撤销，或者中继换过配置。请在设置里填一个新的邀请码并保存。';
+    }
+    if (raw.indexOf('proxy_protocol') >= 0) {
+      return '本地服务端拒绝了连接：你打开了「PROXY 协议」，但原版 Paper 不支持它。到设置里取消勾选「让本地服务端看到真实玩家 IP」再保存。';
     }
     if (raw.indexOf('invite_exhausted') >= 0) {
       return '这个邀请码已经用完了（设备数已达上限）。请让中继管理员再发一个。';
