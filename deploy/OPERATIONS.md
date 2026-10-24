@@ -73,7 +73,23 @@ systemctl restart nonerp            # token 是启动时读的，必须重启
 
 第二条命令打印的 `nonerp://join?...` 链接就是要发给房主的东西。
 
+**一次给多个房主**（一人一个 token，各发一条链接）：
+
+```bash
+cd /opt/nonerp
+./nonerp server token new -config server.yaml -note "小明"
+./nonerp server token new -config server.yaml -note "小红"
+systemctl restart nonerp                 # 一次性重启，不用每签一个就重启
+./nonerp server link -config server.yaml -all
+```
+
+`-all` 会按 note 排序，把每个 token 对应的链接都打出来。
+
+**看清谁在用**：`./nonerp server token ls -config server.yaml`
+
 **撤销一个 token**：把 `server.yaml` 里 `tokens:` 下面那一行删掉，然后 `systemctl restart nonerp`。
+
+> 链接本身就是凭证：谁拿到谁就能在这台中继上开一个房间、占用带宽。但它**不能顶掉别人的房间**——房间码已经被别的设备占用时注册会被拒绝。
 
 ## 升级
 

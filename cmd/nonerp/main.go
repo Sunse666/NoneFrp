@@ -166,6 +166,7 @@ func runServerLink(args []string) error {
 	token := fs.String("token", "", "access token to embed in the link")
 	relayURL := fs.String("relay", "", "relay url, defaults to public_url in the config")
 	room := fs.String("room", "auto", "room code the agent should request")
+	all := fs.Bool("all", false, "print a link for every issued token")
 	if err := fs.Parse(args); err != nil {
 		return errUsage
 	}
@@ -174,11 +175,13 @@ func runServerLink(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *token == "" {
-		return fmt.Errorf("the -token flag is required")
+	if !*all && *token == "" {
+		return fmt.Errorf("the -token flag is required (or -all for every token)")
 	}
-	if _, ok := cfg.Tokens[*token]; !ok {
-		return fmt.Errorf("token %q has not been issued by this relay", *token)
+	if *token != "" {
+		if _, ok := cfg.Tokens[*token]; !ok {
+			return fmt.Errorf("token %q has not been issued by this relay", *token)
+		}
 	}
 
 	target := *relayURL
@@ -187,6 +190,25 @@ func runServerLink(args []string) error {
 	}
 	if target == "" {
 		return fmt.Errorf("no relay url: set public_url in %s or pass -relay", *configPath)
+	}
+
+	if *all {
+		codes := make([]string, 0, len(cfg.Tokens))
+		for code := range cfg.Tokens {
+			codes = append(codes, code)
+		}
+		sort.Strings(codes)
+		if len(codes) == 0 {
+			return fmt.Errorf("no tokens issued yet: run nonerp server token new")
+		}
+		for _, code := range codes {
+			built, err := link.JoinLink(target, code, *room)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("# %s\n%s\n", cfg.Tokens[code], built)
+		}
+		return nil
 	}
 
 	built, err := link.JoinLink(target, *token, *room)
